@@ -5,171 +5,456 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Leak Lab — FIRERUN</title>
 <style>
-:root{--bg:#0b0f14;--panel:#111820;--border:#26313d;--text:#e6edf3;--muted:#8b98a7;
---green:#3ddc84;--yellow:#f5c451;--red:#f05252;--blue:#4ea1ff;--purple:#a78bfa}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,system-ui,-apple-system,sans-serif;padding:18px}
-header{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
-h1{font-size:17px;margin:0;font-weight:600}
-h1 b{color:var(--purple)}
-.pill{padding:4px 12px;border-radius:20px;border:1px solid var(--border);font-size:11px;color:var(--muted)}
-.pill.bad{color:var(--red);border-color:#5c1a1a;background:#2a0e0e;animation:pulse 1.2s infinite}
-.pill.ok{color:var(--green);border-color:#1d4428;background:#0f1f14}
-@keyframes pulse{50%{opacity:.5}}
+:root{
+--bg:#0b0f14;--panel:#111820;--border:#26313d;--text:#e6edf3;--muted:#8b98a7;
+--green:#3ddc84;--green-soft:rgba(61,220,132,.12);
+--yellow:#f5c451;--yellow-soft:rgba(245,196,81,.12);
+--red:#f05252;--red-soft:rgba(240,82,82,.12);
+--blue:#4ea1ff;--blue-soft:rgba(78,161,255,.12);
+--purple:#a78bfa;--purple-soft:rgba(167,139,250,.12);
+--orange:#ff9f43;--radius:7px}
+html,body{margin:0;padding:0;min-height:100%;background:var(--bg);color:var(--text);
+font-family:Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;font-size:13px}
+button,input{font:inherit}
+.app{display:flex;min-height:100vh}
+.sidebar{width:230px;background:#0a0e13;border-right:1px solid #202934;padding:14px 10px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:10px;padding:7px 10px 20px;font-size:15px;font-weight:600}
+.logo-mark{width:27px;height:27px;border-radius:6px;background:linear-gradient(135deg,#a78bfa,#4ea1ff);display:grid;place-items:center;color:#fff;font-size:13px;font-weight:800}
+.logo small{color:var(--muted);font-weight:400;display:block;font-size:10px;margin-top:1px}
+.nav-section{margin:17px 8px 7px;color:#566372;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;color:#8995a3;padding:9px 11px;margin:2px 0;border-radius:5px;text-decoration:none}
+.nav-item:hover{background:#121a23;color:#dce4ec}
+.nav-item.active{background:#18222d;color:#fff}
+.nav-icon{width:18px;text-align:center;opacity:.85;font-size:11px}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{height:54px;border-bottom:1px solid #202934;display:flex;align-items:center;padding:0 18px;gap:14px;background:#0c1117}
+.breadcrumb{color:var(--muted);font-size:12px}.breadcrumb strong{color:#dbe3eb}
+.livepill{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--green)}
+.livepill .d{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.45}}
 .spacer{flex:1}
-a.btn{display:inline-block;padding:6px 12px;border:1px solid var(--border);border-radius:6px;color:#cbd5df;text-decoration:none;font-size:11px}
-a.btn:hover{border-color:var(--purple);color:var(--purple)}
-.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
-.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin:0 0 10px}
-.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
-label{color:var(--muted);font-size:11px}
-input{width:60px;height:30px;background:#0b1117;border:1px solid var(--border);border-radius:5px;color:#d7e0e8;padding:0 8px;font:12px Menlo;outline:none}
-button{background:#161c26;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 13px;font:12px Inter;cursor:pointer}
-button:hover{border-color:var(--cyan,#39d2c0);color:#39d2c0}
-button.danger{border-color:#5c1a1a;color:var(--red)}
-button.go{border-color:#1d4428;color:var(--green)}
-.note{color:var(--muted);font-size:10.5px;margin-top:8px}
-canvas{width:100%;height:180px;display:block}
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
-.kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px}
-.kpi .l{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
-.kpi .v{font-size:21px;margin-top:5px}
-.grow{color:var(--red)}.flat{color:var(--green)}
-footer{color:#566372;font-size:10px;text-align:center;margin-top:10px}
+.top-btn{height:31px;padding:0 11px;border:1px solid var(--border);border-radius:5px;color:#cbd5df;background:#111820;text-decoration:none;display:inline-flex;align-items:center;font-size:11px}
+.top-btn:hover{background:#17212b}
+.content{padding:15px 17px 25px;max-width:1680px;width:100%;margin:0 auto}
+.page-title{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px;gap:12px;flex-wrap:wrap}
+.page-title h1{font-size:17px;margin:0;font-weight:500}
+.page-title p{color:var(--muted);margin:4px 0 0;font-size:11px;max-width:720px}
+.status-row{display:flex;flex-wrap:wrap;gap:8px}
+.pill{padding:4px 12px;border-radius:20px;border:1px solid var(--border);font-size:11px;color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--green);border-color:#1d4428;background:var(--green-soft)}
+.pill.bad{color:var(--red);border-color:#5c1a1a;background:var(--red-soft);animation:pulse 1.2s infinite}
+.pill.info{color:var(--blue);border-color:#1f4470;background:var(--blue-soft)}
+.pill.warn{color:var(--yellow);border-color:#4d3a10;background:var(--yellow-soft)}
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:10px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:11px 12px}
+.kpi-head{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.kpi-value{margin-top:6px;font-size:20px;font-weight:500}
+.kpi-meta{margin-top:3px;font-size:10px;color:var(--muted)}
+.grow{color:var(--red)}.flat{color:var(--green)}.warn{color:var(--yellow)}
+.grid{display:grid;gap:10px;margin-bottom:10px}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-2{grid-template-columns:1.2fr 1fr}
+.grid-5{grid-template-columns:repeat(5,1fr)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);min-width:0;overflow:hidden}
+.panel-header{height:39px;padding:0 12px;border-bottom:1px solid #222d38;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel-title{font-size:11px;font-weight:500;color:#d7e0e8}
+.panel-actions{color:var(--muted);font-size:10px;white-space:nowrap}
+.panel-body{padding:11px 12px}
+.note{color:var(--muted);font-size:10.5px;margin-top:10px;line-height:1.55}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn-row+.btn-row{margin-top:8px;padding-top:8px;border-top:1px dashed #222d38}
+label{color:var(--muted);font-size:11px;margin-right:4px}
+input.num{width:56px;height:30px;background:#0b1117;border:1px solid var(--border);border-radius:5px;color:#d7e0e8;padding:0 8px;font:12px Menlo;outline:none}
+button.action{background:#111820;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 11px;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+button.action:hover{background:#17212b;border-color:#456078}
+button.action.danger{border-color:#5c1a1a;color:var(--red);background:var(--red-soft)}
+button.action.go{border-color:#1d4428;color:var(--green);background:var(--green-soft)}
+button.action.flow{border-color:#4c3a75;color:var(--purple);background:var(--purple-soft)}
+button.action.sm{padding:5px 9px;font-size:10px;width:100%;justify-content:flex-start}
+.btn-tag{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:3px;background:#0a0e13;border:1px solid #2a3542;color:var(--muted)}
+.btn-tag.crit{color:#ff7777;border-color:#5c1a1a;background:var(--red-soft)}
+.btn-tag.auto{color:var(--green);border-color:#1d4428;background:var(--green-soft)}
+.btn-tag.gate{color:var(--purple);border-color:#4c3a75;background:var(--purple-soft)}
+.btn-tag.slo{color:var(--yellow);border-color:#4d3a10;background:var(--yellow-soft)}
+.btn-tag.cost{color:var(--orange);border-color:#5c3a10;background:rgba(255,159,67,.12)}
+.chart{width:100%;height:170px;position:relative}
+canvas{display:block;width:100%;height:170px}
+.legend{display:flex;gap:12px;color:var(--muted);font-size:9px;flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend i{width:7px;height:7px;display:inline-block;border-radius:50%}
+.scenario-card .panel-body{display:flex;flex-direction:column;gap:6px}
+.scenario-desc{color:var(--muted);font-size:10px;line-height:1.45;margin:0 0 4px}
+.action-bar{display:flex;align-items:center;gap:10px;min-height:34px;padding:8px 12px;margin-bottom:10px;background:#0a1017;border:1px solid var(--border);border-radius:var(--radius);font-size:11px}
+.action-bar.ok{border-color:#1d4428;background:var(--green-soft);color:#b8f0cf}
+.action-bar.err{border-color:#5c1a1a;background:var(--red-soft);color:#f0b5b5}
+.action-bar.busy{border-color:#4c3a75;background:var(--purple-soft);color:#d8c8ff}
+.action-bar .label{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;min-width:72px}
+.action-bar .msg{flex:1;font-family:Menlo,monospace;font-size:10.5px;word-break:break-word}
+.footer{color:#566372;font-size:9px;padding:5px 2px;text-align:right}
+@media(max-width:1250px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.grid-3,.grid-5{grid-template-columns:1fr 1fr}.grid-2{grid-template-columns:1fr}}
+@media(max-width:850px){.sidebar{display:none}.kpi-grid{grid-template-columns:repeat(2,1fr)}.grid-3,.grid-5,.grid-2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="logo-mark">L</div><div>Leak Lab<small>demo choreography · signer-prod</small></div></div>
+  <div class="nav-section">Navigation</div>
+  <a class="nav-item" href="/"><span class="nav-icon">◂</span>Alert Center</a>
+  <a class="nav-item active" href="/lab"><span class="nav-icon">◈</span>Leak Lab</a>
+  <a class="nav-item" href="/agents"><span class="nav-icon">⚙</span>Agent Roster</a>
+  <a class="nav-item" href="/noc" target="_blank"><span class="nav-icon">▣</span>NOC Console ↗</a>
+</aside>
 
-<header>
-  <h1>🧪 FIRERUN <b>Leak Lab</b></h1>
-  <span class="pill" id="relPill">release: —</span>
-  <span class="pill ok" id="leakPill">no leak</span>
+<main class="main">
+<header class="topbar">
+  <div class="breadcrumb">Home &nbsp;/&nbsp;<strong>Leak Lab</strong></div>
+  <span class="livepill"><span class="d"></span>LIVE · scrape 2s</span>
   <div class="spacer"></div>
-  <a class="btn" href="/">← Dashboard</a>
-  <a class="btn" href="/noc" target="_blank">NOC ▸</a>
+  <a class="top-btn" href="/">← Dashboard</a>
 </header>
 
-<div class="kpis">
-  <div class="kpi"><div class="l">prod memory (app)</div><div class="v" id="kMem">—</div></div>
-  <div class="kpi"><div class="l">observed growth</div><div class="v" id="kRate">—</div></div>
-  <div class="kpi"><div class="l">container RSS (kernel)</div><div class="v" id="kRss">—</div></div>
-  <div class="kpi"><div class="l">twin memory (control)</div><div class="v" id="kTwin">—</div></div>
-</div>
-
-<div class="panel">
-  <h2>Load simulator — requests against the live release</h2>
-  <div class="row">
-    <label>requests/burst</label><input id="simN" value="3">
-    <label>gap (sec)</label><input id="simI" value="2">
-    <label>bursts</label><input id="simB" value="20">
-    <button class="danger" onclick="con('deploy v2.1.0')">1 · Deploy the leaky release</button>
-    <button class="go" onclick="simStart()">2 · Start load</button>
-    <button onclick="con('simstop')">■ Stop load</button>
-    <button onclick="con('rollback')">3 · Rollback to v1.42.0 (fix)</button>
+<section class="content">
+<div class="page-title">
+  <div>
+    <h1>Leak Lab</h1>
+    <p>Arm real failure conditions and launch each runbook flow with guided steps. Charts bind to live Prometheus scrapes — memory, P99 latency, and daily infra cost.</p>
   </div>
-  <div class="note">Deploy the buggy release, start the load, and watch both memory lines: the app-reported heap <i>and</i> the kernel's container RSS climb together — real allocations in a real container. Roll back and the same load stops moving memory: the leak class is gone, not masked.</div>
-</div>
-
-<div class="panel">
-  <h2>Scenario triggers — arm the real conditions behind each runbook</h2>
-  <div class="row">
-    <button class="danger" onclick="con('deploy v2.1.0')">💧 memory leak</button>
-    <button class="danger" onclick="con('traffic 4200')">📈 latency spike (4200 rps)</button>
-    <button class="danger" onclick="con('pool event-pool 6')">💸 orphaned pool ($/day burning)</button>
-    <button onclick="con('traffic 1000')">↩ normal traffic</button>
-    <button onclick="con('pool event-pool 0')">↩ clear pool</button>
+  <div class="status-row">
+    <span class="pill info" id="relPill">release: —</span>
+    <span class="pill ok" id="leakPill">memory stable</span>
+    <span class="pill ok" id="sloPill">SLO ok</span>
+    <span class="pill ok" id="costPill">cost baseline</span>
   </div>
-  <div class="row" style="margin-top:4px">
-    <button class="go" onclick="con('canary')">🛡 canary guard — rehearse → execute → auto-rollback</button>
-    <button style="border-color:#4c3a75;color:var(--purple)" onclick="con('rollout')">🚦 release-rollout — twin → soak → approval gate → prod</button>
-    <button style="border-color:#4c3a75;color:var(--purple)" onclick="con('incident')">🚨 incident flow — on-call with phone gate</button>
+</div>
+
+<div class="action-bar" id="actionBar">
+  <span class="label">Last action</span>
+  <span class="msg" id="actionMsg">Ready — click any button to arm a scenario or start a runbook flow.</span>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-head">Prod memory</div><div class="kpi-value" id="kMem">—</div><div class="kpi-meta">heap gauge</div></div>
+  <div class="kpi"><div class="kpi-head">Growth rate</div><div class="kpi-value flat" id="kRate">—</div><div class="kpi-meta">MB/min observed</div></div>
+  <div class="kpi"><div class="kpi-head">Container RSS</div><div class="kpi-value" id="kRss">—</div><div class="kpi-meta">docker prod-app</div></div>
+  <div class="kpi"><div class="kpi-head">P99 latency</div><div class="kpi-value" id="kP99">—</div><div class="kpi-meta">SLO 150 ms</div></div>
+  <div class="kpi"><div class="kpi-head">Traffic</div><div class="kpi-value" id="kRps">—</div><div class="kpi-meta" id="kCap">capacity —</div></div>
+  <div class="kpi"><div class="kpi-head">Infra cost</div><div class="kpi-value" id="kCost">—</div><div class="kpi-meta" id="kPool">event-pool —</div></div>
+</div>
+
+<div class="grid grid-3" id="chartsRow">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Memory — prod vs twin (MB)</div>
+      <div class="legend"><span><i style="background:#f05252"></i>prod</span><span><i style="background:#3ddc84"></i>twin</span><span><i style="background:#f5c451"></i>512 OOM</span></div>
+    </div>
+    <div class="panel-body"><div class="chart"><canvas id="cMem"></canvas></div></div>
   </div>
-  <div class="note">Composites run rehearse → execute and stream into the Run Console on the main dashboard. The release-rollout pauses at a human approval card before production.</div>
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">P99 latency vs SLO (ms)</div>
+      <div class="legend"><span><i style="background:#a78bfa"></i>p99</span><span><i style="background:#f5c451"></i>SLO 150</span><span><i style="background:#4ea1ff"></i>rps</span></div>
+    </div>
+    <div class="panel-body"><div class="chart"><canvas id="cP99"></canvas></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Infra cost — orphan pool burn ($/day)</div>
+      <div class="legend"><span><i style="background:#ff9f43"></i>cost/day</span><span><i style="background:#687786"></i>baseline ~$46</span></div>
+    </div>
+    <div class="panel-body"><div class="chart"><canvas id="cCost"></canvas></div></div>
+  </div>
 </div>
 
-<div class="panel">
-  <h2>Live memory — prod vs twin (MB)</h2>
-  <canvas id="cMem"></canvas>
+<div class="panel" style="margin-bottom:10px">
+  <div class="panel-header">
+    <div class="panel-title">Demo runbooks — guided steps per scenario</div>
+    <div class="panel-actions">each flow: arm condition → run rehearse+execute</div>
+  </div>
+  <div class="panel-body" style="padding:0">
+    <div class="grid grid-5" style="margin:0;gap:0">
+      <div class="panel scenario-card" style="border:0;border-radius:0;border-right:1px solid var(--border)">
+        <div class="panel-header" style="height:36px"><div class="panel-title">Memory incident</div><span class="btn-tag gate">GATE</span></div>
+        <div class="panel-body">
+          <p class="scenario-desc">SEV-2 heap leak under load. Phone gate at irreversible cache purge.</p>
+          <button class="action sm danger" onclick="con('deploy v2.1.0')"><span class="btn-tag crit">1</span> Deploy v2.1.0</button>
+          <button class="action sm go" onclick="simStart()"><span class="btn-tag">2</span> Start load</button>
+          <button class="action sm flow" onclick="con('incident')"><span class="btn-tag gate">3</span> Run incident flow</button>
+        </div>
+      </div>
+      <div class="panel scenario-card" style="border:0;border-radius:0;border-right:1px solid var(--border)">
+        <div class="panel-header" style="height:36px"><div class="panel-title">Canary guard</div><span class="btn-tag auto">AUTO</span></div>
+        <div class="panel-body">
+          <p class="scenario-desc">Progressive delivery detects leak, auto-rolls back. Zero gates.</p>
+          <button class="action sm danger" onclick="con('deploy v2.1.0')"><span class="btn-tag crit">1</span> Deploy v2.1.0</button>
+          <button class="action sm go" onclick="simStart()"><span class="btn-tag">2</span> Start load</button>
+          <button class="action sm flow" onclick="con('canary')"><span class="btn-tag auto">3</span> Run canary flow</button>
+        </div>
+      </div>
+      <div class="panel scenario-card" style="border:0;border-radius:0;border-right:1px solid var(--border)">
+        <div class="panel-header" style="height:36px"><div class="panel-title">Release rollout</div><span class="btn-tag gate">GATE</span></div>
+        <div class="panel-body">
+          <p class="scenario-desc">Fix on twin → Daytona soak → your approval → prod promote.</p>
+          <button class="action sm danger" onclick="con('deploy v2.1.0')"><span class="btn-tag crit">1</span> Arm leak on prod</button>
+          <button class="action sm" onclick="con('rollback')"><span class="btn-tag">2</span> Twin gets fix</button>
+          <button class="action sm flow" onclick="con('rollout')"><span class="btn-tag gate">3</span> Run rollout flow</button>
+        </div>
+      </div>
+      <div class="panel scenario-card" style="border:0;border-radius:0;border-right:1px solid var(--border)">
+        <div class="panel-header" style="height:36px"><div class="panel-title">Latency spike</div><span class="btn-tag slo">SLO</span></div>
+        <div class="panel-body">
+          <p class="scenario-desc">4200 rps overloads capacity — p99 breaches SLO. Agent scales up.</p>
+          <button class="action sm danger" onclick="con('traffic 4200')"><span class="btn-tag slo">1</span> Traffic 4200 rps</button>
+          <button class="action sm" onclick="con('traffic 1000')"><span class="btn-tag">2</span> Reset traffic</button>
+          <button class="action sm flow" onclick="con('latency')"><span class="btn-tag auto">3</span> Run latency flow</button>
+        </div>
+      </div>
+      <div class="panel scenario-card" style="border:0;border-radius:0">
+        <div class="panel-header" style="height:36px"><div class="panel-title">Orphan cleanup</div><span class="btn-tag cost">COST</span></div>
+        <div class="panel-body">
+          <p class="scenario-desc">Forgotten event-pool min-instances — ~$43/day waste. Gate to delete.</p>
+          <button class="action sm danger" onclick="con('pool event-pool 6')"><span class="btn-tag cost">1</span> Arm event-pool ×6</button>
+          <button class="action sm" onclick="con('pool event-pool 0')"><span class="btn-tag">2</span> Clear pool</button>
+          <button class="action sm flow" onclick="con('orphan')"><span class="btn-tag gate">3</span> Run orphan flow</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<footer id="footer">connecting…</footer>
+<div class="grid grid-2">
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Load simulator</div><div class="panel-actions">POST /api/cmd</div></div>
+    <div class="panel-body">
+      <div class="btn-row">
+        <label>req/burst</label><input class="num" id="simN" value="3">
+        <label>gap (sec)</label><input class="num" id="simI" value="2">
+        <label>bursts</label><input class="num" id="simB" value="20">
+        <button class="action go" onclick="simStart()">Start load</button>
+        <button class="action" onclick="con('simstop')">Stop</button>
+      </div>
+      <div class="note">Each burst hits /metrics on prod — real +8 MB allocations while v2.1.0 is deployed. Watch memory and RSS charts climb together.</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Quick reset</div><div class="panel-actions">prod admin API</div></div>
+    <div class="panel-body">
+      <div class="btn-row">
+        <button class="action" onclick="con('rollback')">Rollback v1.42.0</button>
+        <button class="action" onclick="con('traffic 1000')">Normal traffic</button>
+        <button class="action" onclick="con('pool event-pool 0')">Clear pool</button>
+        <button class="action danger" onclick="con('reset')">Reset stage</button>
+      </div>
+      <div class="note">Use before recording the "all healthy" opening beat: rollback + traffic 1000 + clear pool.</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer" id="footer">connecting…</div>
+</section>
+</main>
+</div>
 
 <script>
 const API = (location.protocol.startsWith('http') && location.port === '8095') ? '' : 'http://localhost:8095';
 const $ = id => document.getElementById(id);
 const fmtT = t => new Date(t).toLocaleTimeString([], {hour12:false});
 
-function draw(id, defs, oom) {
-  const cv = $(id), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.height;
-  cv.width = W*dpr; const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr); ctx.clearRect(0,0,W,H);
+function padSeries(data) {
+  const pts = (data ?? []).slice();
+  if (pts.length === 1) pts.unshift({ t: pts[0].t - 4000, v: pts[0].v });
+  return pts;
+}
+
+function draw(id, defs, opts = {}) {
+  const cv = $(id);
+  if (!cv) return;
+  const parent = cv.parentElement;
+  const dpr = devicePixelRatio || 1;
+  const W = cv.clientWidth || parent?.clientWidth || 0;
+  const H = cv.clientHeight || parent?.clientHeight || 170;
+  if (!W || !H) return;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  cv.style.width = W + 'px';
+  cv.style.height = H + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const norm = defs.map(d => ({ ...d, data: padSeries(d.data) }));
   let mn = Infinity, mx = -Infinity;
-  for (const d of defs) for (const p of d.data) { mn = Math.min(mn, p.v); mx = Math.max(mx, p.v); }
-  if (oom != null) { mn = Math.min(mn, 0); mx = Math.max(mx, oom*1.08); }
-  if (!isFinite(mn)) { mn = 0; mx = 1; } if (mx-mn < 1) mx = mn+1;
-  const all = defs.flatMap(d => d.data); if (all.length < 2) return;
-  const t0 = Math.min(...all.map(p => p.t)), t1 = Math.max(...all.map(p => p.t));
-  const X = t => t1 === t0 ? W : ((t-t0)/(t1-t0))*(W-8)+4;
-  const Y = v => H-8-((v-mn)/(mx-mn))*(H-18);
-  ctx.strokeStyle = '#1f2630'; ctx.fillStyle = '#687786'; ctx.font = '9px Menlo'; ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) { const y = 8+i*(H-20)/4; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.fillText(Math.round(mx-(mx-mn)*i/4), 4, y+3); }
-  if (oom != null) { ctx.strokeStyle = '#f5c451'; ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(0,Y(oom)); ctx.lineTo(W,Y(oom)); ctx.stroke(); ctx.setLineDash([]); }
-  for (const d of defs) {
-    if (d.data.length < 2) continue;
-    ctx.beginPath(); d.data.forEach((p,i) => { const x = X(p.t), y = Y(p.v); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
-    ctx.strokeStyle = d.color; ctx.lineWidth = 1.8; ctx.stroke();
-    const last = d.data[d.data.length-1];
-    ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(X(last.t), Y(last.v), 2.6, 0, 7); ctx.fill();
-    ctx.fillText(d.name, W-60, 10+defs.indexOf(d)*12);
+  for (const d of norm) for (const p of d.data) { mn = Math.min(mn, p.v); mx = Math.max(mx, p.v); }
+  for (const l of (opts.lines ?? [])) { mn = Math.min(mn, l.v); mx = Math.max(mx, l.v); }
+  if (!isFinite(mn)) { mn = 0; mx = 1; }
+  if (mx - mn < 1) mx = mn + 1;
+  mn = Math.max(0, mn - (mx - mn) * 0.08);
+
+  const all = norm.flatMap(d => d.data);
+  if (!all.length) {
+    ctx.fillStyle = '#687786';
+    ctx.font = '11px Inter';
+    ctx.fillText('waiting for scrape data…', 12, H / 2);
+    return;
+  }
+
+  const t0 = Math.min(...all.map(p => p.t));
+  const t1 = Math.max(...all.map(p => p.t));
+  const X = t => t1 === t0 ? W / 2 : ((t - t0) / (t1 - t0)) * (W - 8) + 4;
+  const Y = v => H - 8 - ((v - mn) / (mx - mn)) * (H - 18);
+
+  ctx.strokeStyle = '#1f2630';
+  ctx.fillStyle = '#687786';
+  ctx.font = '9px Menlo';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = 6 + i * (H - 16) / 3;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+    ctx.fillText(Math.round(mx - (mx - mn) * i / 3), W - 34, y - 3);
+  }
+  for (const l of (opts.lines ?? [])) {
+    ctx.strokeStyle = l.color;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, Y(l.v));
+    ctx.lineTo(W, Y(l.v));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  for (const d of norm) {
+    if (!d.data.length) continue;
+    ctx.beginPath();
+    d.data.forEach((p, i) => {
+      const x = X(p.t), y = Y(p.v);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.strokeStyle = d.color;
+    ctx.lineWidth = d.width ?? 1.8;
+    ctx.stroke();
+    if (d.fill) {
+      ctx.lineTo(X(d.data[d.data.length - 1].t), H);
+      ctx.lineTo(X(d.data[0].t), H);
+      ctx.closePath();
+      ctx.fillStyle = d.color + '22';
+      ctx.fill();
+    }
+    const last = d.data[d.data.length - 1];
+    ctx.fillStyle = d.color;
+    ctx.beginPath();
+    ctx.arc(X(last.t), Y(last.v), 2.6, 0, 7);
+    ctx.fill();
   }
 }
 
 function growthRateMbPerMin(pts) {
-  const now = Date.now(); const win = (pts ?? []).filter(p => now - p.t <= 240000);
-  if (win.length < 4) return 0;
-  const dtMin = (win[win.length-1].t - win[0].t) / 60000;
-  return dtMin > 0 ? Math.max(0, Math.round((win[win.length-1].v - win[0].v) / dtMin)) : 0;
+  const now = Date.now();
+  const win = (pts ?? []).filter(p => now - p.t <= 180000).sort((a, b) => a.t - b.t);
+  if (win.length < 3) return 0;
+  const dtMin = (win[win.length - 1].t - win[0].t) / 60000;
+  if (dtMin < 0.15) return 0;
+  const dv = win[win.length - 1].v - win[0].v;
+  return dv > 1 ? Math.round(dv / dtMin) : 0;
+}
+
+function eventPoolSize(state) {
+  const pool = (state?.pools ?? []).find(p => p.name === 'event-pool');
+  return pool?.size ?? 0;
+}
+
+async function setAction(state, msg) {
+  const bar = $('actionBar'), el = $('actionMsg');
+  if (!bar || !el) return;
+  bar.className = 'action-bar ' + (state || '');
+  el.textContent = msg;
 }
 
 async function con(cmd) {
-  try { const r = await (await fetch(API + '/api/cmd', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({cmd}) })).json();
-    if (r.output) console.log(r.output); } catch {}
+  setAction('busy', `Running: ${cmd}…`);
+  try {
+    const r = await (await fetch(API + '/api/cmd', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({cmd}) })).json();
+    if (r.ok !== false && (r.output || r.ok)) {
+      setAction('ok', r.output || 'done');
+    } else {
+      setAction('err', r.error || 'command failed');
+    }
+    refresh();
+  } catch (e) {
+    setAction('err', 'NOC unreachable on :8095 — run: npm run dashboard');
+  }
 }
 function simStart() { con(`simulate ${$('simN').value} ${$('simI').value} ${$('simB').value}`); }
 
 async function refresh() {
-  let s; try { s = await (await fetch(API + '/api/snapshot')).json(); } catch { $('footer').textContent = '✖ NOC server on :8095 unreachable — run: npm run dashboard'; return; }
-  const tg = Object.fromEntries(s.targets.map(t => [t.id, t]));
-  const ok = t => t && t.lastOk && Date.now() - t.lastOk < 8000;
-  const p = tg.prod, tw = tg.twin;
-  const mem = p?.metrics?.app_mem_mb ?? 0, leak = !!p?.state?.leakOn;
-  const rate = growthRateMbPerMin(s.series['prod:app_mem_mb']);
-  const ver = p?.metrics?._version ?? '—';
+  let s;
+  try { s = await (await fetch(API + '/api/snapshot')).json(); }
+  catch { $('footer').textContent = 'cannot reach NOC server on :8095 — run: npm run dashboard'; return; }
 
-  const rp = $('relPill'); rp.textContent = 'release: ' + ver;
-  rp.className = 'pill ' + (leak ? 'bad' : 'ok');
-  const lp = $('leakPill');
-  if (leak) { lp.textContent = `LEAK ACTIVE — climbing ~${rate} MB/min (observed)`; lp.className = 'pill bad'; }
-  else { lp.textContent = 'no leak — memory stable'; lp.className = 'pill ok'; }
+  const tg = Object.fromEntries(s.targets.map(t => [t.id, t]));
+  const p = tg.prod, tw = tg.twin;
+  const mem = p?.metrics?.app_mem_mb ?? 0;
+  const leak = !!p?.state?.leakOn;
+  const rate = leak ? growthRateMbPerMin(s.series['prod:app_mem_mb']) : 0;
+  const ver = p?.metrics?._version ?? '—';
+  const p99 = p?.metrics?.p99_ms ?? 0;
+  const rps = p?.metrics?.app_rps ?? 0;
+  const cap = p?.slo?.capacity_rps ?? p?.state?.capacity_rps ?? 1000;
+  const cost = p?.metrics?.cost_usd_daily ?? p?.state?.cost_usd_daily ?? 0;
+  const poolSz = eventPoolSize(p?.state);
+  const sloBreach = p99 > 150;
+  const costBurn = poolSz >= 6;
+
+  $('relPill').textContent = 'release: ' + ver;
+  $('relPill').className = 'pill ' + (leak ? 'bad' : 'info');
+  $('leakPill').textContent = leak
+    ? (rate >= 8 ? `LEAK · ~${rate} MB/min` : 'LEAK · armed on release')
+    : 'memory stable';
+  $('leakPill').className = 'pill ' + (leak ? 'bad' : 'ok');
+  $('sloPill').textContent = sloBreach ? `SLO breach · p99 ${Math.round(p99)}ms` : `SLO ok · p99 ${Math.round(p99)}ms`;
+  $('sloPill').className = 'pill ' + (sloBreach ? 'warn' : 'ok');
+  $('costPill').textContent = costBurn ? `+$${Math.round(cost - 45)}/day orphan burn` : `$${cost}/day baseline`;
+  $('costPill').className = 'pill ' + (costBurn ? 'bad' : 'ok');
 
   $('kMem').textContent = Math.round(mem) + ' MB';
   $('kMem').style.color = mem > 400 ? 'var(--red)' : mem > 250 ? 'var(--yellow)' : 'var(--green)';
   $('kRate').textContent = leak ? '~' + rate + ' MB/min' : '~0';
-  $('kRate').className = 'v ' + (leak && rate > 2 ? 'grow' : 'flat');
+  $('kRate').className = 'kpi-value ' + (leak && rate > 2 ? 'grow' : 'flat');
   const rss = (s.dockerMem ?? {})['prod-app'];
   $('kRss').textContent = rss != null ? rss + ' MB' : '—';
   $('kRss').style.color = rss != null && rss > 400 ? 'var(--red)' : 'var(--green)';
-  const tm = tw?.metrics?.app_mem_mb;
-  $('kTwin').textContent = tm != null ? Math.round(tm) + ' MB' : '—';
-  $('kTwin').style.color = 'var(--green)';
+  $('kP99').textContent = Math.round(p99) + ' ms';
+  $('kP99').style.color = sloBreach ? 'var(--red)' : 'var(--green)';
+  $('kRps').textContent = Math.round(rps) + ' rps';
+  $('kRps').style.color = rps > cap * 0.8 ? 'var(--yellow)' : 'var(--text)';
+  $('kCap').textContent = `capacity ${cap} rps · ${Math.round(rps / Math.max(cap, 1) * 100)}%`;
+  $('kCost').textContent = '$' + cost + '/day';
+  $('kCost').style.color = costBurn ? 'var(--orange)' : 'var(--green)';
+  $('kPool').textContent = `event-pool: ${poolSz} nodes`;
 
   draw('cMem', [
-    { name: 'prod', color: '#f05252', data: s.series['prod:app_mem_mb'] ?? [] },
+    { name: 'prod', color: '#f05252', fill: true, data: s.series['prod:app_mem_mb'] ?? [] },
     { name: 'twin', color: '#3ddc84', data: s.series['twin:app_mem_mb'] ?? [] },
-  ], 512);
+  ], { lines: [{ v: 512, color: '#f5c451' }] });
 
-  $('footer').textContent = `updated ${fmtT(Date.now())} · live telemetry from the running system · release ${ver}`;
+  draw('cP99', [
+    { name: 'p99', color: '#a78bfa', fill: true, data: s.series['prod:p99_ms'] ?? [] },
+    { name: 'rps', color: '#4ea1ff', width: 1.2, data: (s.series['prod:app_rps'] ?? []).map(pt => ({ t: pt.t, v: pt.v / 20 })) },
+  ], { lines: [{ v: 150, color: '#f5c451' }] });
+
+  draw('cCost', [
+    { name: 'cost', color: '#ff9f43', fill: true, data: s.series['prod:cost_usd_daily'] ?? [] },
+  ], { lines: [{ v: 45.6, color: '#687786' }] });
+
+  $('footer').textContent = `updated ${fmtT(Date.now())} · release ${ver} · charts: ${(s.series['prod:app_mem_mb'] ?? []).length} scrape points · FIRERUN Leak Lab`;
 }
-refresh(); setInterval(refresh, 2000);
+
+refresh();
+setInterval(refresh, 2000);
+window.addEventListener('resize', refresh);
+requestAnimationFrame(() => requestAnimationFrame(refresh));
 </script>
 </body>
 </html>

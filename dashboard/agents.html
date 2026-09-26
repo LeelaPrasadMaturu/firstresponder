@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Roster — FIRERUN × TrueForge</title>
+<style>
+*{box-sizing:border-box}
+:root{--bg:#0b0f14;--panel:#111820;--border:#26313d;--text:#e6edf3;--muted:#8b98a7;
+--green:#3ddc84;--green-soft:rgba(61,220,132,.12);--yellow:#f5c451;--red:#f05252;
+--blue:#4ea1ff;--purple:#a78bfa;--radius:7px}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,system-ui,sans-serif}
+.app{display:flex;min-height:100vh}
+.sidebar{width:220px;background:#0a0e13;border-right:1px solid #202934;padding:14px 10px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:10px;padding:7px 10px 18px;font-size:15px;font-weight:600}
+.logo-mark{width:27px;height:27px;border-radius:6px;background:linear-gradient(135deg,#4ea1ff,#a78bfa);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800}
+.logo small{color:var(--muted);font-weight:400;display:block;font-size:10px}
+.nav-section{margin:14px 8px 6px;color:#566372;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;color:#8995a3;padding:9px 11px;margin:2px 0;border-radius:5px;text-decoration:none;font-size:12px}
+.nav-item:hover{background:#121a23;color:#dce4ec}
+.nav-item.active{background:#18222d;color:#fff}
+.main{flex:1;min-width:0;padding:16px 18px 24px;max-width:1400px}
+.topbar{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.topbar h1{font-size:17px;margin:0;font-weight:500;flex:1}
+.pill{padding:4px 11px;border-radius:20px;border:1px solid var(--border);font-size:10px}
+.pill.ok{color:var(--green);border-color:#1d4428;background:var(--green-soft)}
+.pill.bad{color:var(--red);border-color:#5c1a1a;background:rgba(240,82,82,.12)}
+.pill.info{color:var(--blue);border-color:#1f4470;background:rgba(78,161,255,.12)}
+.grid{display:grid;gap:10px;margin-bottom:10px}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-2{grid-template-columns:1.2fr 1fr}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.panel-h{padding:10px 12px;border-bottom:1px solid #222d38;font-size:11px;font-weight:500;color:#d7e0e8;display:flex;justify-content:space-between;align-items:center}
+.panel-b{padding:11px 12px}
+.agent-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.agent-card{border:1px solid #252f39;background:#0e151c;border-radius:8px;padding:12px}
+.agent-card h3{margin:0 0 4px;font-size:13px;font-weight:600}
+.agent-card .role{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.agent-card .scope{font-size:10px;color:#aeb8c4;line-height:1.45}
+.chip{display:inline-block;padding:2px 7px;border-radius:10px;font-size:9px;margin:2px 4px 0 0;border:1px solid}
+.chip.read{color:var(--blue);border-color:#1f4470;background:rgba(78,161,255,.1)}
+.chip.write{color:var(--green);border-color:#1d4428;background:var(--green-soft)}
+.chip.gate{color:var(--purple);border-color:#4c3a75;background:rgba(167,139,250,.12)}
+.kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #1e2730;font-size:11px}
+.kv:last-child{border:0}
+.kv span:first-child{color:var(--muted)}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.links a{color:var(--blue);text-decoration:none;font-size:11px;padding:6px 10px;border:1px solid var(--border);border-radius:5px}
+.links a:hover{background:#17212b}
+.feed{max-height:220px;overflow-y:auto;font:10px/1.5 Menlo}
+.ev{padding:5px 7px;border-left:2px solid var(--border);margin-bottom:4px;background:#0a0e13;border-radius:0 5px 5px 0}
+.ev b{color:var(--purple)}
+.footer{color:#566372;font-size:9px;margin-top:10px;text-align:right}
+@media(max-width:1100px){.agent-grid,.grid-3{grid-template-columns:1fr 1fr}.grid-2{grid-template-columns:1fr}}
+@media(max-width:700px){.sidebar{display:none}.agent-grid,.grid-3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+  <div class="logo"><div class="logo-mark">TF</div><div>Agent Roster<small>TrueForge × FIRERUN</small></div></div>
+  <div class="nav-section">Dashboards</div>
+  <a class="nav-item" href="/"><span>◂</span> Alert Center</a>
+  <a class="nav-item" href="/lab"><span>◈</span> Leak Lab</a>
+  <a class="nav-item active" href="/agents"><span>⚙</span> Agents</a>
+  <a class="nav-item" href="/noc" target="_blank"><span>▣</span> NOC ↗</a>
+  <a class="nav-item" href="/agents"><span>⚙</span> Agent Roster</a>
+</aside>
+<main class="main">
+<div class="topbar">
+  <h1>TrueForge Agent Roster</h1>
+  <span class="pill info" id="tfPill">TrueForge — checking…</span>
+  <span class="pill info" id="sbPill">Daytona — …</span>
+  <span class="pill info" id="mcpPill">MCP tools — …</span>
+</div>
+
+<div class="grid grid-2">
+  <div class="panel">
+    <div class="panel-h"><span>On-call team — six role agents</span><span id="agentCount" style="color:var(--muted);font-size:10px">—</span></div>
+    <div class="panel-b"><div class="agent-grid" id="agentGrid"></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-h">Platform health</div>
+    <div class="panel-b">
+      <div class="kv"><span>TrueForge API</span><span id="tfApi">—</span></div>
+      <div class="kv"><span>Registered agents</span><span id="tfAgents">—</span></div>
+      <div class="kv"><span>Sandbox provider</span><span id="tfSandbox">—</span></div>
+      <div class="kv"><span>Stage MCP (:7789)</span><span id="mcpHealth">—</span></div>
+      <div class="kv"><span>Model provider</span><span id="tfModel">from firerun/.env</span></div>
+      <div class="links">
+        <a href="http://localhost:8790/agents" target="_blank">TF Agents UI ↗</a>
+        <a href="http://localhost:8790/sessions" target="_blank">Sessions ↗</a>
+        <a href="http://localhost:8790/schedules" target="_blank">Schedules ↗</a>
+        <a href="http://localhost:8790/settings" target="_blank">Settings ↗</a>
+        <a href="http://localhost:17788/gate" target="_blank">Approval Gates ↗</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="panel">
+    <div class="panel-h">Runbook library <span style="color:var(--muted);font-weight:400">the-stage/runbooks + archive</span></div>
+    <div class="panel-b" id="runbookList" style="font-size:10px;color:#aeb8c4">loading…</div>
+  </div>
+  <div class="panel">
+    <div class="panel-h">Recent TF sessions — audit chain</div>
+    <div class="panel-b"><div class="feed" id="sessionFeed">loading…</div></div>
+  </div>
+</div>
+
+<div class="footer" id="footer">connecting…</div>
+</main>
+</div>
+
+<script>
+const API = (location.protocol.startsWith('http') && location.port === '8095') ? '' : 'http://localhost:8095';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const fmtT = t => new Date(t).toLocaleTimeString([], {hour12:false});
+
+const ROLES = {
+  scout: { title: 'SCOUT', desc: 'Read-only triage — logs, metrics, DB selects', chips: ['read'] },
+  analyst: { title: 'ANALYST', desc: 'Root-cause analysis — sandboxed doubt verification', chips: ['read', 'sandbox'] },
+  surgeon: { title: 'SURGEON', desc: 'Reversible remediation — deploy, scale, rollback cards', chips: ['read', 'write'] },
+  executor: { title: 'EXECUTOR', desc: 'Gated irreversible actions — pauses at human gate', chips: ['gate'] },
+  verifier: { title: 'VERIFIER', desc: 'Independent verification — re-probes the world', chips: ['read'] },
+  scribe: { title: 'SCRIBE', desc: 'Incident record + flywheel addendum author', chips: ['read', 'write'] },
+};
+
+function renderAgents(names) {
+  const known = Object.keys(ROLES);
+  const grid = $('agentGrid');
+  if (!names.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:11px">No agents registered — run <code>npm run tf:setup</code> in firerun/</div>';
+    return;
+  }
+  grid.innerHTML = names.map(n => {
+    const key = known.find(k => n.toLowerCase().includes(k)) ?? '';
+    const r = ROLES[key] ?? { title: n, desc: 'TrueForge agent', chips: [] };
+    const chips = (r.chips ?? []).map(c =>
+      `<span class="chip ${c === 'gate' ? 'gate' : c === 'write' ? 'write' : 'read'}">${c}</span>`).join('');
+    return `<div class="agent-card"><h3>${esc(r.title)}</h3><div class="role">${esc(n)}</div><div class="scope">${esc(r.desc)}</div>${chips}</div>`;
+  }).join('');
+}
+
+async function refresh() {
+  let tf = { ok: false, agents: [] }, sb = { ok: false }, mcp = { ok: false }, snap = null;
+  try { tf = await (await fetch(API + '/api/tf/status')).json(); } catch {}
+  try { mcp = await (await fetch(API + '/api/tf/mcp')).json(); } catch {}
+  try { snap = await (await fetch(API + '/api/snapshot')).json(); } catch {
+    $('footer').textContent = 'NOC server unreachable — npm run dashboard';
+    return;
+  }
+
+  const tfOk = tf.ok === true;
+  $('tfPill').textContent = tfOk ? 'TrueForge online' : 'TrueForge offline';
+  $('tfPill').className = 'pill ' + (tfOk ? 'ok' : 'bad');
+  $('sbPill').textContent = tf.sandbox?.status === 'ready' ? 'Daytona ready' : 'Daytona ' + (tf.sandbox?.status ?? 'unknown');
+  $('sbPill').className = 'pill ' + (tf.sandbox?.status === 'ready' ? 'ok' : 'bad');
+  $('mcpPill').textContent = mcp.ok ? `MCP ${mcp.tools ?? 6} tools` : 'MCP offline';
+  $('mcpPill').className = 'pill ' + (mcp.ok ? 'ok' : 'bad');
+
+  $('tfApi').textContent = tfOk ? ':8790 OK' : 'start TrueForge';
+  $('tfApi').style.color = tfOk ? 'var(--green)' : 'var(--red)';
+  const names = (tf.agents ?? []).map(a => a.name ?? a);
+  $('tfAgents').textContent = names.length ? names.length + ' registered' : 'run tf:setup';
+  $('agentCount').textContent = names.length + ' agents';
+  renderAgents(names);
+  $('tfSandbox').textContent = tf.sandbox?.provider ?? '—';
+  $('mcpHealth').textContent = mcp.ok ? `:7789 · ${mcp.tools} tools` : ':7789 down';
+  $('mcpHealth').style.color = mcp.ok ? 'var(--green)' : 'var(--red)';
+
+  $('runbookList').innerHTML = (snap.runbooks ?? []).map(r =>
+    `<div class="kv"><span>${esc(r.file.replace('.md',''))}</span><span>${r.steps} steps · ${r.gates ? r.gates + ' gate' : 'auto'} · runs ${r.runCount}</span></div>`
+  ).join('') || 'no runbooks compiled';
+
+  const sess = (snap.audit ?? []).filter(a => a.event === 'tf_session_created' || a.event === 'tf_turn_done').slice(0, 12);
+  $('sessionFeed').innerHTML = sess.map(a => {
+    const role = a.payload?.role ?? '';
+    return `<div class="ev"><b>${esc(a.event)}</b> ${esc(role)} · run ${esc((a.runId ?? '').slice(0, 20))}… <span style="color:var(--muted);float:right">${fmtT(a.ts)}</span></div>`;
+  }).join('') || '<div style="color:var(--muted)">no TF sessions yet — run a rehearse/execute flow</div>';
+
+  $('footer').textContent = `updated ${fmtT(Date.now())} · ${(snap.runbooks ?? []).length} runbooks · FIRERUN Agent Roster`;
+}
+refresh(); setInterval(refresh, 4000);
+</script>
+</body>
+</html>

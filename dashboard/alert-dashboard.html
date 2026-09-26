@@ -175,7 +175,7 @@ button,select,input{font:inherit}
   <div class="nav-section">Analysis</div>
   <div class="nav-item" data-goto="consolePanel"><span class="nav-icon">⌨</span>Run Console</div>
   <div class="nav-item" data-goto="chartsRow"><span class="nav-icon">◴</span>SLO / Latency</div>
-  <div class="nav-item" data-link="http://localhost:8790/agents"><span class="nav-icon">⚙</span>TrueForge Agents ↗</div>
+  <div class="nav-item" data-link="/agents"><span class="nav-icon">⚙</span>Agent Roster</div>
 </aside>
 
 <main class="main">
@@ -184,8 +184,9 @@ button,select,input{font:inherit}
   <span class="livepill"><span class="d"></span>LIVE · scrape 2s</span>
   <input class="search" id="search" type="text" placeholder="Search alerts, services...">
   <button class="top-btn"><a href="/noc" target="_blank">NOC ▸</a></button>
-  <button class="top-btn"><a href="/lab" target="_blank">🧪 Leak Lab ▸</a></button>
-  <button class="top-btn"><a href="http://localhost:8790/agents" target="_blank">Agents ▸</a></button>
+  <button class="top-btn"><a href="/lab" target="_blank">Leak Lab ↗</a></button>
+  <button class="top-btn"><a href="/agents">Agents ▸</a></button>
+  <button class="top-btn"><a href="http://localhost:8790/sessions" target="_blank">TF Sessions ↗</a></button>
   <button class="top-btn"><a href="http://localhost:17788/gate" target="_blank">Gates ▸</a></button>
   <button class="top-btn refresh" id="refreshBtn">↻</button>
 </header>
@@ -236,7 +237,7 @@ button,select,input{font:inherit}
     </div>
     <div class="panel-body"><div class="chart"><canvas id="cMem"></canvas></div>
     <div class="gauge"><div class="bar"><div class="fill" id="gMem" style="background:linear-gradient(90deg,#238636,#d29922,#f85149);width:0%"></div><div class="oom" style="left:100%"></div></div>
-    <div class="lbl"><span id="gMemL">prod mem —</span><span>scale 0–640 MB</span></div></div></div>
+    <div class="lbl"><span id="gMemL">prod mem —</span><span>scale 0–512 MB · OOM threshold</span></div></div></div>
   </div>
   <div class="panel">
     <div class="panel-header"><div class="panel-title">Active Alerts by Severity</div><div class="panel-actions" id="donutTotal">0 total</div></div>
@@ -314,7 +315,7 @@ button,select,input{font:inherit}
       <button onclick="con('agents')">list agents</button>
       <button onclick="con('verify')">✅ verify stage</button>
       <button onclick="con('help')">help</button>
-      <button onclick="window.open('/lab','_blank')">🧪 open Leak Lab ↗</button>
+      <button onclick="window.open('/lab','_blank')">open Leak Lab ↗</button>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
       <span style="color:var(--green);font-family:Menlo;font-size:12px">firerun ❯</span>
@@ -399,12 +400,32 @@ function mttaMttr(audit) {
   return { mtta, mttr };
 }
 
-/* observed memory growth (MB/min) from the live scrape history — real telemetry */
+/* observed memory growth (MB/min) — positive slope over recent scrapes only */
 function growthRateMbPerMin(pts) {
-  const now = Date.now(); const win = (pts ?? []).filter(p => now - p.t <= 240000);
-  if (win.length < 4) return 0;
+  const now = Date.now();
+  const win = (pts ?? []).filter(p => now - p.t <= 180000).sort((a, b) => a.t - b.t);
+  if (win.length < 3) return 0;
   const dtMin = (win[win.length - 1].t - win[0].t) / 60000;
-  return dtMin > 0 ? Math.max(0, Math.round((win[win.length - 1].v - win[0].v) / dtMin)) : 0;
+  if (dtMin < 0.15) return 0;
+  const dv = win[win.length - 1].v - win[0].v;
+  return dv > 1 ? Math.round(dv / dtMin) : 0;
+}
+
+function svcHealthLabel(svc, ctx) {
+  if (!ctx.up) return ['DOWN', 'critical', '#f05252', 4];
+  if (svc === 'signer-prod') {
+    if (ctx.degraded || ctx.mem >= 512) return ['CRITICAL', 'critical', '#f05252', Math.min(100, ctx.mem / 512 * 100)];
+    if (ctx.leak || ctx.mem >= 400) return ['DEGRADED', 'warn', '#f5c451', Math.min(100, ctx.mem / 512 * 100)];
+    if (ctx.sloBreach) return ['DEGRADED', 'warn', '#f5c451', 72];
+    return ['HEALTHY', 'good', '#3ddc84', Math.max(8, Math.min(60, ctx.mem / 512 * 100))];
+  }
+  if (svc === 'prod-db' && ctx.shards > 0 && ctx.leak) return ['PROBE', 'warn', '#f5c451', 78];
+  if (ctx.load != null) {
+    const load = ctx.load;
+    if (load >= 92) return ['STRESSED', 'warn', '#f5c451', load];
+    return ['HEALTHY', 'good', '#3ddc84', Math.max(4, load)];
+  }
+  return ['HEALTHY', 'good', '#3ddc84', 96];
 }
 
 /* ---- main refresh ---- */
@@ -418,24 +439,33 @@ async function refresh() {
   const p = tg.prod, tw = tg.twin, cl = tg.clB;
   const mem = p?.metrics?.app_mem_mb ?? 0, memPrev = p?.metrics?.app_mem_mb;
   const p99 = p?.metrics?.p99_ms ?? 0, rps = p?.metrics?.app_rps ?? 0;
-  const cap = p?.state?.capacity_rps ?? 1000;
-  const leak = !!p?.state?.leakOn, oom = !!p?.metrics?.oom_risk;
-  const degraded = p?.health?.marker === 'mem_high' || p?.health?.status === 'degraded';
+  const cap = p?.slo?.capacity_rps ?? p?.state?.capacity_rps ?? 1000;
+  const slo = p?.slo ?? {};
+  const leak = !!p?.state?.leakOn;
+  const degraded = p?.health?.status === 'degraded' || mem >= 512;
+  const headroomLow = slo.headroom === 'headroom_low';
+  const sloBreach = slo.slo === 'slo_breach' || p99 > 150;
   const gateOpen = Array.isArray(s.gates) && s.gates.length > 0;
   const version = p?.metrics?._version ?? p?.state?.version ?? '?';
 
-  /* ---------- DERIVE ALERTS (all real conditions) ---------- */
-  const leakRate = growthRateMbPerMin(s.series['prod:app_mem_mb']);
-  setAlert('leak', 'CRITICAL', `Memory leak active — signer-prod ${version} (heap climbing ~${leakRate} MB/min under load)`, 'signer-prod', leak);
-  setAlert('oom', 'CRITICAL', `Heap above OOM threshold (${Math.round(mem)}MB / 512MB) — healthz degraded`, 'signer-prod', oom || degraded);
-  setAlert('p99', 'WARNING', `P99 latency ${Math.round(p99)}ms above SLO (150ms)`, 'signer-prod', p99 > 150);
-  setAlert('cap', 'WARNING', `Traffic ${Math.round(rps)} rps near capacity (${cap} rps)`, 'signer-prod', rps > 0.8 * cap);
+  /* ---------- DERIVE ALERTS (conditions aligned to SLO + health probes) ---------- */
+  const leakRate = leak ? growthRateMbPerMin(s.series['prod:app_mem_mb']) : 0;
+  const leakTitle = leakRate >= 8
+    ? `Memory leak active — signer-prod ${version} (heap climbing ~${leakRate} MB/min under load)`
+    : leak
+      ? `Memory leak armed — signer-prod ${version} (leak class active on this release)`
+      : '';
+  setAlert('leak', 'CRITICAL', leakTitle, 'signer-prod', leak);
+  setAlert('oom', 'CRITICAL', `Heap above OOM threshold (${Math.round(mem)}MB / 512MB) — healthz degraded`, 'signer-prod', degraded);
+  setAlert('mem-pressure', 'WARNING', `Memory pressure rising (${Math.round(mem)}MB) — approaching 512MB OOM line`, 'signer-prod', leak && mem >= 400 && mem < 512);
+  setAlert('p99', 'WARNING', `P99 latency ${Math.round(p99)}ms above SLO (150ms)`, 'signer-prod', sloBreach);
+  setAlert('cap', 'WARNING', `Traffic ${Math.round(rps)} rps exceeds capacity (${cap} rps) — SLO breach`, 'signer-prod', rps > cap || (sloBreach && headroomLow));
   setAlert('prod-down', 'CRITICAL', 'signer-prod unreachable — scrape failing', 'signer-prod', !ok(p));
   setAlert('twin-down', 'WARNING', 'Staging twin unreachable — rehearsals would be blocked', 'staging-twin', !ok(tw));
   setAlert('clb-down', 'INFO', 'Cluster-B standby unreachable', 'cluster-b', !ok(cl));
   setAlert('gate', 'CRITICAL', 'Approval gate open — agent execution paused on human decision', 'firerun-gate', gateOpen);
   const shards = Math.max(0, Math.round((s.shards ?? 0)));
-  setAlert('shards', 'WARNING', `${shards} corrupted cache shard(s) detected in DB`, 'prod-db', shards > 0);
+  setAlert('shards', 'WARNING', `${shards} corrupted cache shard(s) — incident runbook probe firing`, 'prod-db', shards > 0 && (leak || gateOpen));
 
   const active = [...registry.entries()].filter(([,a]) => !a.resolvedAt).sort((x,y) =>
     ['CRITICAL','WARNING','INFO'].indexOf(x[1].sev) - ['CRITICAL','WARNING','INFO'].indexOf(y[1].sev));
@@ -486,37 +516,38 @@ async function refresh() {
      <td><span class="status"><span class="status-dot" style="background:${SEV[a.sev].color}"></span>Firing</span></td></tr>`
   ).join('') || '<tr><td colspan="5" style="color:var(--muted)">No alerts match — all clear 🟢</td></tr>';
 
-  /* ---------- service health (real probes) ---------- */
+  /* ---------- service health (real probes — status must match alerts) ---------- */
+  const prodCtx = { up: ok(p), mem, leak, degraded, sloBreach, shards };
   const svcs = [
-    { name: 'signer-prod',   up: ok(p),  detail: `${version} · ${Math.round(mem)}MB`, load: Math.min(100, mem/640*100) },
-    { name: 'staging-twin',  up: ok(tw), detail: 'rehearsal clone', load: tw?.state ? 96 : 0 },
-    { name: 'cluster-b',     up: ok(cl), detail: cl?.state?.role ?? 'standby', load: cl?.state ? 99 : 0 },
-    { name: 'prod-db',       up: ok(p),  detail: shards + ' corrupted shards', load: shards > 0 ? 78 : 99 },
-    { name: 'firerun-gate',  up: s.gateUp !== false, detail: gateOpen ? 'GATE OPEN' : 'armed', load: s.gateUp !== false ? 100 : 0 },
-    { name: 'registry',      up: s.registryUp !== false, detail: 'OCI :5555', load: 98 },
+    { name: 'signer-prod',  ctx: prodCtx, detail: `${version} · ${Math.round(mem)}MB` },
+    { name: 'staging-twin', ctx: { up: ok(tw), load: ok(tw) ? 42 : 4 }, detail: `${Math.round(tw?.metrics?.app_mem_mb ?? 0)}MB · rehearsal clone` },
+    { name: 'cluster-b',    ctx: { up: ok(cl), load: ok(cl) ? 38 : 4 }, detail: cl?.state?.role ?? 'standby' },
+    { name: 'prod-db',      ctx: { up: ok(p), shards, leak, load: shards > 0 && leak ? 78 : 95 }, detail: shards ? `${shards} shard probe (demo seed)` : 'clean' },
+    { name: 'firerun-gate', ctx: { up: s.gateUp !== false, load: gateOpen ? 100 : 88 }, detail: gateOpen ? 'GATE OPEN' : 'armed' },
+    { name: 'registry',     ctx: { up: s.registryUp !== false, load: 90 }, detail: 'OCI :5555' },
   ];
-  $('svcCount').textContent = svcs.filter(x => x.up).length + '/' + svcs.length + ' up';
+  $('svcCount').textContent = svcs.filter(x => x.ctx.up).length + '/' + svcs.length + ' up';
   $('svcList').innerHTML = svcs.map(x => {
-    const st = !x.up ? ['DOWN', 'critical', '#f05252']
-      : x.load > 80 && x.load < 92 ? ['DEGRADED', 'warn', '#f5c451']
-      : ['HEALTHY', 'good', '#3ddc84'];
+    const [label, cls, color, load] = svcHealthLabel(x.name, x.ctx);
     return `<div class="service-row"><div class="service-name">${esc(x.name)}</div>
-      <div class="health-bar"><div class="health-fill" style="width:${x.up ? Math.max(x.load,4) : 4}%;background:${st[2]}"></div></div>
+      <div class="health-bar"><div class="health-fill" style="width:${Math.max(4, load)}%;background:${color}"></div></div>
       <div class="service-number">${esc(x.detail)}</div>
-      <div class="service-status ${st[1]}">${st[0]}</div></div>`;
+      <div class="service-status ${cls}">${label}</div></div>`;
   }).join('');
 
   /* ---------- system health minis ---------- */
   $('mMem').textContent = Math.round(mem) + ' MB';
-  $('mMem').style.color = oom || degraded ? 'var(--red)' : mem > 300 ? 'var(--yellow)' : 'var(--green)';
-  $('mMemC').textContent = leak ? `↑ climbing ~${leakRate} MB/min (observed)` : 'stable';
+  $('mMem').style.color = degraded ? 'var(--red)' : mem > 300 ? 'var(--yellow)' : 'var(--green)';
+  $('mMemC').textContent = leak && leakRate >= 8 ? `↑ ~${leakRate} MB/min (observed under load)` : leak ? 'leak armed on this release' : 'stable';
   $('mMemC').style.color = leak ? 'var(--red)' : 'var(--green)';
   $('mP99').textContent = Math.round(p99) + 'ms';
-  $('mP99').style.color = p99 > 150 ? 'var(--red)' : 'var(--green)';
+  $('mP99').style.color = sloBreach ? 'var(--red)' : 'var(--green)';
   $('mRps').textContent = Math.round(rps) + '/s';
-  $('mRpsC').textContent = `capacity ${cap} rps · ${Math.round(rps/cap*100)}%`;
+  $('mRpsC').textContent = `${slo.headroom ?? 'headroom_ok'} · ${cap} rps cap · ${Math.round(rps / Math.max(cap, 1) * 100)}%`;
+  $('mRpsC').style.color = headroomLow || rps > cap ? 'var(--yellow)' : 'var(--muted)';
   $('mShards').textContent = shards;
-  $('mShards').style.color = shards > 0 ? 'var(--yellow)' : 'var(--green)';
+  $('mShards').style.color = shards > 0 && (leak || gateOpen) ? 'var(--yellow)' : 'var(--muted)';
+  $('mShardsC').textContent = shards > 0 ? 'demo seed — surfaces during incident flow' : 'DB cache layer clean';
   const dm = s.dockerMem ?? {};
   const rss = dm['prod-app'] ?? null, rssT = dm['twin-app'] ?? null;
   $('mRss').textContent = rss != null ? rss + ' MB' : '—';
@@ -524,9 +555,16 @@ async function refresh() {
   $('mRssC').textContent = rss != null ? (leak ? '↑ climbing — kernel-level RSS' : 'flat — kernel-level RSS') : 'docker stats unavailable';
   $('mRssC').style.color = leak && rss != null ? 'var(--red)' : 'var(--muted)';
   $('mRssT').textContent = rssT != null ? rssT + ' MB' : '—';
-  $('sysHealth').innerHTML = bySev.CRITICAL ? '<span class="critical">● CRITICAL</span>'
+  $('sysHealth').innerHTML = degraded ? '<span class="critical">● CRITICAL</span>'
+    : bySev.CRITICAL ? '<span class="critical">● CRITICAL</span>'
     : bySev.WARNING ? '<span class="warn">● DEGRADED</span>' : '<span class="good">● Operational</span>';
   $('sysHealth').className = 'panel-actions';
+
+  const gMemEl = $('gMem'), gMemLEl = $('gMemL');
+  if (gMemEl) {
+    gMemEl.style.width = Math.min(100, mem / 512 * 100) + '%';
+    gMemLEl.textContent = `prod mem — ${Math.round(mem)} MB` + (degraded ? ' · above OOM line' : mem >= 400 ? ' · pressure' : '');
+  }
 
   /* ---------- charts (real series) ---------- */
   draw('cMem', [
@@ -537,8 +575,7 @@ async function refresh() {
     { lines: [{ v: 150, color: '#f5c451' }] });
   draw('cRps', [
     { name: 'rps', color: '#4ea1ff', fill: true, data: s.series['prod:app_rps'] ?? [] },
-    { name: 'cap', color: '#3ddc84', data: s.series['prod:capacity_rps'] ?? [] },
-  ]);
+  ], { lines: [{ v: cap, color: '#3ddc84', label: 'capacity' }] });
 
   /* ---------- timeline: real audit events ---------- */
   const EV = { gate_opened:['⛔','','gate'], gate_decision:['🗝','','gate'], run_halted:['🛑','','gate'],
