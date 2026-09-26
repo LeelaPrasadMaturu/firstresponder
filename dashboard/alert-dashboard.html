@@ -208,6 +208,123 @@ button,select,input{font:inherit}
 
 <div id="banner"><h2 id="bannerTitle"></h2><div id="bannerBody"></div></div>
 
+
+<!-- ==================================================
+     KPI ROW
+================================================== -->
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-head">Critical Alerts <span class="critical">●</span></div>
+    <div class="kpi-value critical" id="kCrit">0</div><div class="kpi-meta" id="kCritMeta">firing now</div></div>
+  <div class="kpi"><div class="kpi-head">Warning Alerts <span class="warn">●</span></div>
+    <div class="kpi-value warn" id="kWarn">0</div><div class="kpi-meta" id="kWarnMeta">firing now</div></div>
+  <div class="kpi"><div class="kpi-head">Active Alerts <span style="color:var(--orange)">●</span></div>
+    <div class="kpi-value" id="kActive">0</div><div class="kpi-meta" id="kActiveMeta">services affected</div></div>
+  <div class="kpi"><div class="kpi-head">Resolved <span class="good">●</span></div>
+    <div class="kpi-value good" id="kResolved">0</div><div class="kpi-meta">this session</div></div>
+  <div class="kpi"><div class="kpi-head">MTTA <span>◷</span></div>
+    <div class="kpi-value" id="kMtta">—</div><div class="kpi-meta">run start → human decision</div></div>
+  <div class="kpi"><div class="kpi-head">MTTR <span>◴</span></div>
+    <div class="kpi-value" id="kMttr">—</div><div class="kpi-meta">run start → verified fix</div></div>
+</div>
+
+<!-- CHART ROW -->
+<div class="grid grid-3">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Signer-prod memory vs staging twin (MB)</div>
+      <div class="legend"><span><i style="background:#f05252"></i>prod</span><span><i style="background:#3ddc84"></i>twin</span><span><i style="background:#f5c451"></i>OOM 512</span></div>
+    </div>
+    <div class="panel-body"><div class="chart"><canvas id="cMem"></canvas></div>
+    <div class="gauge"><div class="bar"><div class="fill" id="gMem" style="background:linear-gradient(90deg,#238636,#d29922,#f85149);width:0%"></div><div class="oom" style="left:100%"></div></div>
+    <div class="lbl"><span id="gMemL">prod mem —</span><span>scale 0–640 MB</span></div></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Active Alerts by Severity</div><div class="panel-actions" id="donutTotal">0 total</div></div>
+    <div class="panel-body">
+      <div class="alert-summary">
+        <div class="donut" id="donut"><div class="donut-center"><div><strong id="donutN">0</strong><br><span>ACTIVE</span></div></div></div>
+        <div class="severity-list" id="sevList"></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">System Health</div><div class="panel-actions" id="sysHealth">—</div></div>
+    <div class="panel-body">
+      <div class="metric-grid">
+        <div class="mini-metric"><div class="mini-label">Prod memory</div><div class="mini-value" id="mMem">—</div><div class="mini-change" id="mMemC">—</div></div>
+        <div class="mini-metric"><div class="mini-label">P99 latency</div><div class="mini-value" id="mP99">—</div><div class="mini-change" id="mP99C">SLO 150ms</div></div>
+        <div class="mini-metric"><div class="mini-label">Traffic</div><div class="mini-value" id="mRps">—</div><div class="mini-change" id="mRpsC">—</div></div>
+        <div class="mini-metric"><div class="mini-label">Corrupted shards</div><div class="mini-value" id="mShards">—</div><div class="mini-change" id="mShardsC">DB cache layer</div></div>
+        <div class="mini-metric"><div class="mini-label">Container RSS — docker</div><div class="mini-value" id="mRss">—</div><div class="mini-change" id="mRssC">kernel truth, not app-reported</div></div>
+        <div class="mini-metric"><div class="mini-label">Twin RSS — docker</div><div class="mini-value" id="mRssT">—</div><div class="mini-change" id="mRssTC">rehearsal clone, stays flat</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ALERTS + SERVICES -->
+<div class="grid grid-2" id="alertsPanel">
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Active Alerts</div><div class="panel-actions" id="tblCount">0 firing</div></div>
+    <table class="alert-table">
+      <thead><tr><th>Severity</th><th>Alert</th><th>Service</th><th>Duration</th><th>State</th></tr></thead>
+      <tbody id="alertRows"><tr><td colspan="5" style="color:var(--muted)">connecting…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="panel" id="svcPanel">
+    <div class="panel-header"><div class="panel-title">Service Health</div><div class="panel-actions" id="svcCount">—</div></div>
+    <div class="panel-body"><div class="service-list" id="svcList"></div></div>
+  </div>
+</div>
+
+<!-- LATENCY + TRAFFIC -->
+<div class="grid grid-2-equal" id="chartsRow">
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">P99 latency (ms)</div><div class="legend"><span><i style="background:#a78bfa"></i>p99</span><span><i style="background:#f5c451"></i>SLO 150</span></div></div>
+    <div class="panel-body"><div class="chart small"><canvas id="cP99"></canvas></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Traffic vs capacity (rps)</div><div class="legend"><span><i style="background:#4ea1ff"></i>rps</span><span><i style="background:#3ddc84"></i>capacity</span></div></div>
+    <div class="panel-body"><div class="chart small"><canvas id="cRps"></canvas></div></div>
+  </div>
+</div>
+
+<!-- TIMELINE + RULES -->
+<div class="grid grid-2-equal">
+  <div class="panel" id="timelinePanel">
+    <div class="panel-header"><div class="panel-title">Incident Timeline — audit chain</div><div class="panel-actions">live · HMAC-signed</div></div>
+    <div class="panel-body"><div class="timeline" id="timeline"></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">Alert Rules — compiled from runbooks</div><div class="panel-actions" id="ruleCount">—</div></div>
+    <div class="panel-body"><div class="service-list" id="ruleList"></div></div>
+  </div>
+</div>
+
+<!-- RUN CONSOLE -->
+<div class="panel" id="consolePanel" style="margin-bottom:10px">
+  <div class="panel-header">
+    <div class="panel-title">Run Console — drive the demo without a terminal</div>
+    <div class="panel-actions"><span id="conStatus">idle</span></div>
+  </div>
+  <div class="panel-body">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+      <button onclick="con('audit')">audit tail</button>
+      <button onclick="con('git log')">flywheel git log</button>
+      <button onclick="con('agents')">list agents</button>
+      <button onclick="con('verify')">✅ verify stage</button>
+      <button onclick="con('help')">help</button>
+      <button onclick="window.open('/lab','_blank')">🧪 open Leak Lab ↗</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <span style="color:var(--green);font-family:Menlo;font-size:12px">firerun ❯</span>
+      <input id="conInput" placeholder="oncall ../the-stage/runbooks/incident-memory-leak.md   ·   type help" style="flex:1;height:32px;background:#0b1117;border:1px solid var(--border);border-radius:5px;color:#d7e0e8;padding:0 12px;font-family:Menlo;font-size:12px;outline:none">
+      <button class="top-btn" style="height:32px" onclick="runCon()">Run ⏎</button>
+    </div>
+    <pre id="conOut" style="background:#0a0e13;border:1px solid #202934;border-radius:6px;padding:10px;max-height:260px;overflow-y:auto;font:11px/1.5 Menlo;color:#9fe8c4;white-space:pre-wrap;margin:0">FIRERUN console ready — click a button or type a command (help for the list).</pre>
+  </div>
+</div>
+
 <div class="footer" id="footer">connecting…</div>
 </section>
 </main>
