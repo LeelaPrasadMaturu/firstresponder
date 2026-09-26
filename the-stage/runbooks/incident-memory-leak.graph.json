@@ -1,7 +1,7 @@
 {
   "runbook": "../the-stage/runbooks/incident-memory-leak.md",
   "title": "Memory-pressure incident — signer-prod (SEV-2)",
-  "revision": "252f98d",
+  "revision": "64b7332",
   "steps": [
     {
       "id": "step-1",
@@ -178,5 +178,5 @@
       "sourceLine": 103
     }
   ],
-  "compiledAt": "2026-09-26T10:55:21.305Z"
+  "compiledAt": "2026-09-26T12:17:31.230Z"
 }

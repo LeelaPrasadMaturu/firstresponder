@@ -30,18 +30,29 @@ function tf(): TrueForge {
   return client;
 }
 
-const sessionCache = new Map<string, string>(); // `${runId}:${role}` → sessionId
+// One TF session per runbook step (not per role). Reusing a session across steps
+// left pending subagent approvals on the thread and caused 422 on the next step.
+const sessionCache = new Map<string, string>(); // `${runId}:${stepId}` → sessionId
 
-async function getSession(runId: string, role: TfRole): Promise<string> {
-  const key = `${runId}:${role}`;
-  const existing = sessionCache.get(key);
-  if (existing) return existing;
+export function clearTfSessionCache(): void {
+  sessionCache.clear();
+}
+
+async function createSession(runId: string, role: TfRole): Promise<string> {
   const { data } = await tf().sessions.create({
     agent: { name: `firerun-${role.toLowerCase()}` },
   } as never);
   const id = (data as { id: string }).id;
-  sessionCache.set(key, id);
   appendAudit('tf_session_created', { role, sessionId: id }, runId);
+  return id;
+}
+
+async function getSession(runId: string, role: TfRole, stepId: string): Promise<string> {
+  const key = `${runId}:${stepId}`;
+  const existing = sessionCache.get(key);
+  if (existing) return existing;
+  const id = await createSession(runId, role);
+  sessionCache.set(key, id);
   return id;
 }
 
@@ -68,16 +79,30 @@ export async function runTurn(opts: {
   transcript?: Array<{ role: string; content: string; toolCalls?: unknown[] }>;
 }): Promise<TfTurnOutcome> {
   ensureDirs();
-  const sessionId = await getSession(opts.runId, opts.role);
+  const stepId = opts.step?.id ?? `${opts.role}-turn`;
+  let sessionId = await getSession(opts.runId, opts.role, stepId);
   const events = new Map<string, TrueForgeApi.TurnStreamingEvent>();
   const pendingApprovals: TrueForgeApi.ToolApprovalRequiredEvent[] = [];
   const toolCalls: TfTurnOutcome['toolCalls'] = [];
   const transcript = opts.transcript ?? [];
   const deltas: string[] = [];
 
-  const stream = await tf().sessions.createTurnStream(sessionId, {
+  const startTurn = async (sid: string) => tf().sessions.createTurnStream(sid, {
     input: [{ type: 'user.message', content: opts.goal }],
   } as never);
+
+  let stream: Awaited<ReturnType<typeof startTurn>>;
+  try {
+    stream = await startTurn(sessionId);
+  } catch (err) {
+    // Stale session from a prior halted run — fresh session, one retry.
+    const msg = String(err);
+    if (!/422|approvals or questions are pending/i.test(msg)) throw err;
+    sessionCache.delete(`${opts.runId}:${stepId}`);
+    sessionId = await createSession(opts.runId, opts.role);
+    sessionCache.set(`${opts.runId}:${stepId}`, sessionId);
+    stream = await startTurn(sessionId);
+  }
 
   let sawDelta = false;
   for await (const { data: event } of (stream as { withMetadata: () => AsyncIterable<{ data: TrueForgeApi.TurnStreamingEvent }> }).withMetadata()) {

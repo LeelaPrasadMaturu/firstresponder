@@ -229,11 +229,18 @@ export function startGateServer(port = config.gatePort): void {
     appendAudit('oncall_webhook', { body: req.body }, undefined);
     res.json({ ok: true, message: 'alert received — run `npm run cli -- oncall <runbook>` or the serve loop will pick it up' });
   });
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     const nets = Object.values(os.networkInterfaces()).flat().filter((i): i is os.NetworkInterfaceInfo => !!i && i.family === 'IPv4' && !i.internal).map(i => i.address);
     console.log(`  Gate UI    http://localhost:${port}/gate`);
     for (const n of nets) console.log(`  Phone      http://${n}:${port}/gate   (same network)`);
     console.log(`  Webhook    POST http://localhost:${port}/oncall`);
+  });
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.log(`  Gate UI    http://localhost:${port}/gate   (already running — reusing)`);
+      return;
+    }
+    throw err;
   });
 }
 

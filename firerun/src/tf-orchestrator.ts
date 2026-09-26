@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config, ensureDirs } from './config.js';
 import { appendAudit } from './audit.js';
-import { runTurn, verifyWithProbes, type TfRole } from './trueforge/runner.js';
+import { clearTfSessionCache, runTurn, verifyWithProbes, type TfRole } from './trueforge/runner.js';
 import { requestApproval, writeGateSnapshot } from './gate.js';
 import { writeAddendum } from './flywheel.js';
 import type { Graph, RunState, Step, StepResult } from './types.js';
@@ -137,6 +137,7 @@ export async function executeGraphTF(graph: Graph, mode: 'REHEARSE' | 'EXECUTE')
   saveState(state);
   appendAudit('run_started', { runbook: graph.title, revision: graph.revision, mode, runtime: 'trueforge' }, runId);
   readSeen.clear();
+  clearTfSessionCache();
 
   console.log(`\n🩹 FIRSTRESPONDER — ${mode} via TRUEFORGE ${mode === 'REHEARSE' ? '(against TWIN)' : '(LIVE)'}`);
   console.log(`   runbook: ${graph.title} @${graph.revision}`);

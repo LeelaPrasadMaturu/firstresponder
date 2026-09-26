@@ -79,5 +79,5 @@ services:
     container_name: pagerduty-mock
     ports: ["${PAGER_PORT:-8090}:8090"]
     environment:
-      GATE_URL: ${GATE_URL:-http://host.docker.internal:7788}   # fires webhook into firerun
+      GATE_URL: ${GATE_URL:-http://host.docker.internal:17788}   # fires webhook into firerun gate
       PORT: "8090"

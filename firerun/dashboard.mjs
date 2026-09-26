@@ -189,6 +189,10 @@ function seriesPayload() {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const send = (code, body, type = 'application/json') => {
+    if (res.writableEnded) {
+      console.warn(`duplicate response suppressed for ${url.pathname}`);
+      return;
+    }
     res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
     res.end(body);
   };
@@ -297,7 +301,7 @@ const server = http.createServer(async (req, res) => {
           // release-rollout composite: twin-first fix rollout with the human gate
           if (head === 'rollout') {
             const log = `/tmp/firerun-console-${Date.now()}.log`;
-            const script = 'npx tsx src/cli.ts rehearse ../the-stage/runbooks/release-rollout.md && npx tsx src/cli.ts execute ../the-stage/runbooks/release-rollout.md';
+            const script = 'npx tsx src/cli.ts rehearse ../the-stage/runbooks/release-rollout.md && npx tsx src/cli.ts execute ../the-stage/runbooks/release-rollout.md --no-serve';
             const child = spawn('bash', ['-lc', script], {
               cwd: __dirname, detached: true, stdio: ['ignore', fs.openSync(log, 'a'), fs.openSync(log, 'a')],
               env: { ...process.env },
@@ -346,7 +350,7 @@ const server = http.createServer(async (req, res) => {
             };
             const rb = rbMap[head];
             const log = `/tmp/firerun-console-${Date.now()}.log`;
-            const script = `npx tsx src/cli.ts rehearse ../the-stage/runbooks/${rb} && npx tsx src/cli.ts execute ../the-stage/runbooks/${rb}`;
+            const script = `npx tsx src/cli.ts rehearse ../the-stage/runbooks/${rb} && npx tsx src/cli.ts execute ../the-stage/runbooks/${rb} --no-serve`;
             const child = spawn('bash', ['-lc', script], {
               cwd: __dirname, detached: true, stdio: ['ignore', fs.openSync(log, 'a'), fs.openSync(log, 'a')],
               env: { ...process.env },
@@ -360,7 +364,9 @@ const server = http.createServer(async (req, res) => {
             const rb = arg.replace(/^\.\.\//, '../');
             if (!RB.test(rb)) return send(400, JSON.stringify({ ok: false, error: `usage: ${head} ../the-stage/runbooks/<name>.md` }));
             const log = `/tmp/firerun-console-${Date.now()}.log`;
-            const child = spawn('npx', ['tsx', 'src/cli.ts', head, rb], {
+            const args = ['tsx', 'src/cli.ts', head, rb];
+            if (head === 'execute') args.push('--no-serve'); // gate already on :17788 during demo
+            const child = spawn('npx', args, {
               cwd: __dirname, detached: true, stdio: ['ignore', fs.openSync(log, 'a'), fs.openSync(log, 'a')],
               env: { ...process.env },
             });
@@ -395,9 +401,11 @@ const server = http.createServer(async (req, res) => {
             case 'scale': return post(`${prod}/admin/scale`, { replicas: num(arg, 0, 500) });
             case 'reset': {
               execFile('docker', ['compose', '-f', '../the-stage/docker-compose.yml', 'restart', 'app'], { timeout: 60000 }, () => {
-                setTimeout(() => post(`${prod}/admin/deploy`, { version: 'v2.1.0' }), 2500);
+                setTimeout(() => {
+                  execFile('curl', ['-s', '-XPOST', `${prod}/admin/deploy`, '-H', 'content-type: application/json', '-d', JSON.stringify({ version: 'v2.1.0' })], { timeout: 8000 }, () => scrape());
+                }, 2500);
               });
-              return out('restarting prod-app → deploying v2.1.0 (leaky)…');
+              return out('restarting prod-app → deploying v2.1.0 (leaky)… watch metrics in ~30s');
             }
             case 'verify': {
               execFile('npx', ['tsx', 'src/verify-suite.ts'], { cwd: __dirname, timeout: 60000, maxBuffer: 1e6 }, (e, so, se) => out(String(so || se || e)));
