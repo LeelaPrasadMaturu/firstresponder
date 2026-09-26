@@ -1,0 +1,165 @@
+{
+  "runbook": "../the-stage/runbooks/deploy-registry.md",
+  "title": "Registry-backed deploy — v2.2.0 through a real image registry",
+  "revision": "f78f648",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Inspect the current release",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Inspect the current release\nRecord the version currently in production.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/admin/state",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 13
+    },
+    {
+      "id": "step-2",
+      "title": "Build and push v2.2.0 to the registry, stage on the twin",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Build and push v2.2.0 to the registry, stage on the twin\nThe release is built with its version baked in, pushed to the registry, then\nrolled out to the twin by pulling the exact image:\n​(code block — see commands)\nUndo: `bash ../../../the-stage/scripts/deploy-image.sh v1.42.0 twin`",
+      "commands": [
+        "bash ../../../the-stage/scripts/push-image.sh v2.2.0\nbash ../../../the-stage/scripts/deploy-image.sh v2.2.0 twin\n​"
+      ],
+      "probes": [],
+      "blastRadius": "none — registry push + twin only",
+      "undoHint": "bash ../../../the-stage/scripts/deploy-image.sh v1.42.0 twin",
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 18
+    },
+    {
+      "id": "step-3",
+      "title": "Verify the twin runs exactly what was pushed",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Verify the twin runs exactly what was pushed\nThe twin must report the pushed version — image and release are the same\nobject now. Any drift between \"what we pushed\" and \"what runs\" FAILS here.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "command",
+          "target": "curl -s http://localhost:8081/admin/state",
+          "expectContains": "v2.2.0"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s http://localhost:8081/healthz",
+          "expectContains": "ok"
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 30
+    },
+    {
+      "id": "step-4",
+      "title": "Promote the same image to production",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Promote the same image to production\n​(code block — see commands)\nUndo: `bash ../../../the-stage/scripts/deploy-image.sh v1.42.0 prod`",
+      "commands": [
+        "bash ../../../the-stage/scripts/deploy-image.sh v2.2.0 prod\n​"
+      ],
+      "probes": [],
+      "blastRadius": "all users get v2.2.0 within seconds; rollback re-deploys the v1.42.0 image (~30s, same registry)",
+      "undoHint": "bash ../../../the-stage/scripts/deploy-image.sh v1.42.0 prod",
+      "requires": [
+        "step-3"
+      ],
+      "gate": true,
+      "sourceLine": 37
+    },
+    {
+      "id": "step-5",
+      "title": "Front-of-glass verification of production",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Front-of-glass verification of production\nv2.2.0 shipped a broken status widget — this is where the runbook catches it.\nA 200 with a broken widget is a FAILED deploy.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "content",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/pricing",
+          "expectContains": "Plans"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 45
+    },
+    {
+      "id": "step-6",
+      "title": "Hotfix the status page asset",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Hotfix the status page asset\n​(code block — see commands)\nUndo: `curl -s -XPOST $APP_URL/admin/unfix-status`",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/fix-status\n​"
+      ],
+      "probes": [],
+      "blastRadius": "none — restores a missing static asset",
+      "undoHint": "curl -s -XPOST $APP_URL/admin/unfix-status",
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 54
+    },
+    {
+      "id": "step-7",
+      "title": "Re-verify and record the deployed digest",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — Re-verify and record the deployed digest\nThe status page must render, and the running container must reference the\nregistry image digest — the audit trail records exactly WHAT is in prod.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        },
+        {
+          "kind": "command",
+          "target": "docker inspect prod-app --format '{{.Image}}'",
+          "expectContains": "sha256"
+        }
+      ],
+      "requires": [
+        "step-6"
+      ],
+      "gate": false,
+      "sourceLine": 62
+    }
+  ],
+  "compiledAt": "2026-09-26T11:58:36.815Z"
+}

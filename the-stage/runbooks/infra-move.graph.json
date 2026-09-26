@@ -1,0 +1,184 @@
+{
+  "runbook": "../the-stage/runbooks/infra-move.md",
+  "title": "Cluster migration — move order-service from cluster-A to cluster-B",
+  "revision": "284d849",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Snapshot cluster-A's state (the rollback source of truth)",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Snapshot cluster-A's state (the rollback source of truth)\nRecord version, replicas, node pools, cost. If the migration aborts\nanywhere, this snapshot defines \"back to normal.\"",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/admin/state",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 16
+    },
+    {
+      "id": "step-2",
+      "title": "Provision order-service on cluster-B",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Provision order-service on cluster-B\nSame release, same capacity, zero traffic:\n(code block — see commands)\nUndo: `curl -s -XPOST $CLUSTER_B_APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":0}'`",
+      "commands": [
+        "curl -s -XPOST $CLUSTER_B_APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v1.42.0\"}'\ncurl -s -XPOST $CLUSTER_B_APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":10}'\ncurl -s -XPOST $CLUSTER_B_APP_URL/admin/traffic -H 'content-type: application/json' -d '{\"rps\":0}'"
+      ],
+      "probes": [],
+      "blastRadius": "none — cluster-B serves no traffic yet; undo = scale cluster-B back to zero replicas",
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 22
+    },
+    {
+      "id": "step-3",
+      "title": "Verify cluster-B serves the full surface before any traffic moves",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Verify cluster-B serves the full surface before any traffic moves\nThe new cluster must prove it can serve users BEFORE users are sent to it.\nA cold cluster that fails here halts the run — no cutover to a broken\ntarget, ever.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/pricing",
+          "expectContains": "Pricing"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 34
+    },
+    {
+      "id": "step-4",
+      "title": "Warm cluster-B (caches, connections, JIT'd paths)",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Warm cluster-B (caches, connections, JIT'd paths)\nGive cluster-B realistic load so the first real requests don't hit cold\ncaches:\n(code block — see commands)\nUndo: `curl -s -XPOST $CLUSTER_B_APP_URL/admin/traffic -H 'content-type: application/json' -d '{\"rps\":0}'`",
+      "commands": [
+        "curl -s -XPOST $CLUSTER_B_APP_URL/admin/traffic -H 'content-type: application/json' -d '{\"rps\":400}'"
+      ],
+      "probes": [],
+      "blastRadius": "none — synthetic load on cluster-B only; undo = traffic back to 0",
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 43
+    },
+    {
+      "id": "step-5",
+      "title": "CUT TRAFFIC: promote cluster-B to primary (GATE 1)",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — CUT TRAFFIC: promote cluster-B to primary (GATE 1)\nThe simulated load-balancer weight flip. This is the single most dangerous\nmoment of any migration — hence the gate, with the Step 3 verification\nattached as evidence:\n(code block — see commands)\nUndo: `curl -s -XPOST $CLUSTER_B_APP_URL/admin/role -H 'content-type: application/json' -d '{\"role\":\"standby\"}'`",
+      "commands": [
+        "curl -s -XPOST $CLUSTER_B_APP_URL/admin/role -H 'content-type: application/json' -d '{\"role\":\"primary\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "100% of order traffic now rides on cluster-B; user-visible if cluster-B is unhealthy; undo = flip roles back (~60s, rehearsed)",
+      "requires": [
+        "step-4"
+      ],
+      "gate": true,
+      "sourceLine": 54
+    },
+    {
+      "id": "step-6",
+      "title": "Verify the NEW cluster is actually serving users",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Verify the NEW cluster is actually serving users\n\"Promoted\" is a claim; this step is the proof. Pages render, SLO holds,\nrole is primary. Only a green Step 6 earns Step 7.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/admin/state",
+          "expectContains": "primary"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/slo",
+          "expectContains": "slo_ok"
+        }
+      ],
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 66
+    },
+    {
+      "id": "step-7",
+      "title": "Decommission cluster-A (GATE 2 — the point of no return)",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — Decommission cluster-A (GATE 2 — the point of no return)\nThe old cluster goes away. The undo exists but represents going back to\nsquare one — the gate card says so explicitly:\n(code block — see commands)",
+      "commands": [
+        "curl -s -XPOST $PROD_APP_URL/admin/role -H 'content-type: application/json' -d '{\"role\":\"decommissioned\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "cluster-A stops serving permanently; capacity now depends entirely on cluster-B; undo = restore role primary (possible but means re-migrating) — treated as accepting the new topology",
+      "requires": [
+        "step-6"
+      ],
+      "gate": true,
+      "sourceLine": 74
+    },
+    {
+      "id": "step-8",
+      "title": "Final verification of the new topology",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 8 — Final verification of the new topology\nCluster-A decommissioned, cluster-B healthy and serving every page. The\nflywheel records the migration — including actual cost delta if pool sizes\nchanged — so the next cluster migration starts from what happened, not\nwhat was planned.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "command",
+          "target": "curl -s $PROD_APP_URL/admin/state",
+          "expectContains": "decommissioned"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s $CLUSTER_B_APP_URL/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-7"
+      ],
+      "gate": false,
+      "sourceLine": 83
+    }
+  ],
+  "compiledAt": "2026-09-26T07:04:20.148Z"
+}

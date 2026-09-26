@@ -1,0 +1,112 @@
+{
+  "runbook": "../the-stage/runbooks/migrate-orders.md",
+  "title": "Schema migration — add `fulfilled_at` to orders (rehearsal-first)",
+  "revision": "f78f648",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Snapshot the production schema and row counts",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Snapshot the production schema and row counts\nRecord orders row count and current columns on prod.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM orders",
+          "expectRows": "\">0\""
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 11
+    },
+    {
+      "id": "step-2",
+      "title": "Copy the migration and apply it to the twin",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Copy the migration and apply it to the twin\nApply the migration to the TWIN database (never prod in this step):\n(code block — see commands)\nUndo: `docker exec twin-db psql -U stage -d stagedb -c \"ALTER TABLE orders DROP COLUMN IF EXISTS fulfilled_at\"`",
+      "commands": [
+        "docker cp migrations/001_add_fulfilled_at.sql twin-db:/tmp/m.sql\ndocker exec twin-db psql -U stage -d stagedb -f /tmp/m.sql"
+      ],
+      "probes": [],
+      "blastRadius": "none — twin only, disposable",
+      "undoHint": "docker exec twin-db psql -U stage -d stagedb -c \"ALTER TABLE orders DROP COLUMN IF EXISTS fulfilled_at\"",
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 16
+    },
+    {
+      "id": "step-3",
+      "title": "Diff what the migration did to the twin",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Diff what the migration did to the twin\nRow-level diff contract: row count must be preserved exactly (50,000) and the\nnew column must exist. Any silent truncation or count drift FAILS the run.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "command",
+          "target": "docker exec twin-db psql -U stage -d stagedb -tAc \\\"SELECT",
+          "expectContains": "50000"
+        },
+        {
+          "kind": "command",
+          "target": "docker exec twin-db psql -U stage -d stagedb -tAc \\\"SELECT",
+          "expectContains": "fulfilled_at"
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 27
+    },
+    {
+      "id": "step-4",
+      "title": "Apply the migration to PRODUCTION",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Apply the migration to PRODUCTION\n(code block — see commands)\nUndo: `docker exec prod-db psql -U stage -d stagedb -c \"ALTER TABLE orders DROP COLUMN IF EXISTS fulfilled_at\"`",
+      "commands": [
+        "docker cp migrations/001_add_fulfilled_at.sql prod-db:/tmp/m.sql\ndocker exec prod-db psql -U stage -d stagedb -f /tmp/m.sql"
+      ],
+      "probes": [],
+      "blastRadius": "schema change on 50k-row live table; ALTER is metadata-only but locks briefly; rollback = column drop (data loss for values written after apply)",
+      "undoHint": "docker exec prod-db psql -U stage -d stagedb -c \"ALTER TABLE orders DROP COLUMN IF EXISTS fulfilled_at\"",
+      "requires": [
+        "step-3"
+      ],
+      "gate": true,
+      "sourceLine": 34
+    },
+    {
+      "id": "step-5",
+      "title": "Verify production matches the rehearsal",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Verify production matches the rehearsal\nProd row count must equal the rehearsal count and the column must exist.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "command",
+          "target": "docker exec prod-db psql -U stage -d stagedb -tAc \\\"SELECT",
+          "expectContains": "50000"
+        },
+        {
+          "kind": "command",
+          "target": "docker exec prod-db psql -U stage -d stagedb -tAc \\\"SELECT",
+          "expectContains": "fulfilled_at"
+        }
+      ],
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 43
+    }
+  ],
+  "compiledAt": "2026-09-26T11:58:37.123Z"
+}
