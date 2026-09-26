@@ -1,0 +1,114 @@
+{
+  "runbook": "../the-stage/runbooks/latency-spike.md",
+  "title": "P99 latency spike — capacity triage (signer-prod)",
+  "revision": "252f98d",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Quantify the spike against the SLO",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Quantify the spike against the SLO\nRead live p99, traffic and capacity. Branch on severity — state the branch:\n(code block — see commands)",
+      "commands": [
+        "SLO=$(curl -s $APP_URL/slo)\nP99=$(echo \"$SLO\" | python3 -c \"import json,sys; print(json.load(sys.stdin)['p99_ms'])\")\nif [ \"${P99:-0}\" -gt 150 ]; then\n  echo \"BRANCH=slo-breach — p99 ${P99}ms > 150ms SLO: full triage now\"\nelse\n  echo \"BRANCH=within-slo — p99 ${P99}ms: log and continue watching\"\nfi"
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "slo_"
+        },
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 18
+    },
+    {
+      "id": "step-2",
+      "title": "Root-cause: traffic vs capacity",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Root-cause: traffic vs capacity\nLatency spikes have exactly two classes here: demand exceeds capacity, or a\ndependency degraded. Compute headroom from the live numbers and branch:\n(code block — see commands)",
+      "commands": [
+        "RPS=$(curl -s $APP_URL/slo | python3 -c \"import json,sys; print(json.load(sys.stdin)['traffic_rps'])\")\nCAP=$(curl -s $APP_URL/slo | python3 -c \"import json,sys; print(json.load(sys.stdin)['capacity_rps'])\")\nif [ \"$RPS\" -gt \"$CAP\" ]; then\n  echo \"BRANCH=capacity-exhausted — ${RPS}rps demand vs ${CAP}rps capacity (overload ratio $(python3 -c \"print(round($RPS/$CAP,2))\")): add capacity\"\nelse\n  echo \"BRANCH=dependency-latency — capacity is fine (${CAP}rps vs ${RPS}rps): investigate upstream instead\"\nfi"
+      ],
+      "probes": [],
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 34
+    },
+    {
+      "id": "step-3",
+      "title": "Add capacity (reversible)",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Add capacity (reversible)\nScale the fixed pool to its HPA ceiling and open event-pool capacity to absorb\nthe surge. Both actions are reversible to the exact pre-spike state:\n(code block — see commands)\nUndo (restores the pre-spike fleet exactly):\n(code block — see commands)",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":20}'\ncurl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{\"name\":\"event-pool\",\"size\":6}'",
+        "curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":10}'\ncurl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{\"name\":\"event-pool\",\"size\":0}'"
+      ],
+      "probes": [],
+      "blastRadius": "extra compute spend (~$3.4/hr) while scaled; fully reversible via admin/scale + admin/pools",
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 49
+    },
+    {
+      "id": "step-4",
+      "title": "Verify the SLO recovered",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Verify the SLO recovered\nIndependent verification from the rendered endpoint: p99 must be back under\n150ms (`slo_ok`), health unchanged.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "slo_ok"
+        },
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectContains": "mem_ok"
+        }
+      ],
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 65
+    },
+    {
+      "id": "step-5",
+      "title": "Post-event plan and evidence record",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Post-event plan and evidence record\nRecord the final state and branch on the post-event plan — capacity is kept\nONLY while the event lasts, then the descale runbook takes over:\n(code block — see commands)",
+      "commands": [
+        "RPS=$(curl -s $APP_URL/slo | python3 -c \"import json,sys; print(json.load(sys.stdin)['traffic_rps'])\")\nif [ \"$RPS\" -gt 3000 ]; then\n  echo \"BRANCH=event-active — keep scaled capacity until traffic drops below 3000rps, then run infra-scale-down\"\nelse\n  echo \"BRANCH=event-over — traffic normal: run infra-scale-down now to reclaim spend\"\nfi"
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "headroom_"
+        }
+      ],
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 72
+    }
+  ],
+  "compiledAt": "2026-09-26T11:14:20.903Z"
+}

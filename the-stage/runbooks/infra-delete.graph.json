@@ -1,0 +1,177 @@
+{
+  "runbook": "../the-stage/runbooks/infra-delete.md",
+  "title": "Decommission the legacy dispatch-notifications stack",
+  "revision": "284d849",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Inventory exactly what will be deleted",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Inventory exactly what will be deleted\nNothing gets deleted that wasn't first named and counted. In a real\nenvironment this step also lists DNS records, dashboards, and alerts\nowned by the stack.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM legacy_topics",
+          "expectRows": "\"=5\""
+        },
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM legacy_pvs",
+          "expectRows": "\"=2\""
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 23
+    },
+    {
+      "id": "step-2",
+      "title": "Evidence: zero traffic for 30+ days",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Evidence: zero traffic for 30+ days\nFour of five topics are stale. If this count ever differs from the\ninventory, the stack changed since the runbook was written — halt, do not\ndelete on stale evidence.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM legacy_topics WHERE consumers_active = 0 AND last_consumed_at < now() - interval '30 days'",
+          "expectRows": "\"=4\""
+        }
+      ],
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 31
+    },
+    {
+      "id": "step-3",
+      "title": "Archive before the knife (the step that MAKES deletion reversible)",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Archive before the knife (the step that MAKES deletion reversible)\n(code block — see commands)\nUndo: `docker exec prod-db psql -U stage -d stagedb -c \"DROP TABLE IF EXISTS legacy_topics_backup;\"`",
+      "commands": [
+        "docker exec prod-db psql -U stage -d stagedb -c \"DROP TABLE IF EXISTS legacy_topics_backup; CREATE TABLE legacy_topics_backup AS SELECT * FROM legacy_topics;\""
+      ],
+      "probes": [],
+      "blastRadius": "none — creates a backup table; undo = DROP TABLE legacy_topics_backup",
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 38
+    },
+    {
+      "id": "step-4",
+      "title": "Verify the archive is restorable (an untested backup is not a backup)",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Verify the archive is restorable (an untested backup is not a backup)\nThe backup must contain the full inventory. If this probe fails, the\nruntime will not let Step 5 run — the rehearsal-prerequisite and\nundo-validation invariants catch it before prod is touched.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM legacy_topics_backup",
+          "expectRows": "\"=5\""
+        }
+      ],
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 47
+    },
+    {
+      "id": "step-5",
+      "title": "DELETE the stale topics (gate 1 of 2)",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — DELETE the stale topics (gate 1 of 2)\n(code block — see commands)\nUndo: `docker exec prod-db psql -U stage -d stagedb -c \"INSERT INTO legacy_topics (topic_name, consumers_active, last_consumed_at, partitions) SELECT topic_name, consumers_active, last_consumed_at, partitions FROM legacy_topics_backup WHERE consumers_active = 0 AND last_consumed_at < now() - interval '30 days';\"`",
+      "commands": [
+        "docker exec prod-db psql -U stage -d stagedb -c \"DELETE FROM legacy_topics WHERE consumers_active = 0 AND last_consumed_at < now() - interval '30 days';\""
+      ],
+      "probes": [],
+      "blastRadius": "4 of 5 topics permanently dropped (dispatch-notifications-v1, order-events-raw-v1, search-index-updates-v1, de-featured-ml-features-v1); payments-settlement-v1 untouched; undo restores all 4 from legacy_topics_backup",
+      "requires": [
+        "step-4"
+      ],
+      "gate": true,
+      "sourceLine": 54
+    },
+    {
+      "id": "step-6",
+      "title": "Verify the LIVE topic was untouched",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Verify the LIVE topic was untouched\nThe blast-radius claim (\"payments untouched\") is checked by the runtime,\nnot trusted from the card. This is the independent-verifier invariant\napplied to deletion.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM legacy_topics WHERE topic_name = 'payments-settlement-v1'",
+          "expectRows": "\"=1\""
+        }
+      ],
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 63
+    },
+    {
+      "id": "step-7",
+      "title": "DELETE the snapshot-less volumes (gate 2 of 2)",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — DELETE the snapshot-less volumes (gate 2 of 2)\nThese volumes have NO backup and NO undo. The gate card will show\nNO SAFE UNDO. Approving means accepting permanent loss on the record —\nthis is exactly the decision the runtime refuses to make alone.\n(code block — see commands)",
+      "commands": [
+        "docker exec prod-db psql -U stage -d stagedb -c \"DELETE FROM legacy_pvs;\""
+      ],
+      "probes": [],
+      "blastRadius": "2 volumes (500GB + 750GB) permanently destroyed — snapshots are DISABLED for this legacy pool; data is unrecoverable after this step; undo: NONE — human override means accepting permanent loss",
+      "requires": [
+        "step-6"
+      ],
+      "gate": true,
+      "sourceLine": 70
+    },
+    {
+      "id": "step-8",
+      "title": "Verify the live surface is unaffected by the decommission",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 8 — Verify the live surface is unaffected by the decommission\nA decommission is only done when nothing user-facing moved: every page\nrenders, order data is intact. The flywheel records what was deleted,\nwhen, by whose approval — the audit trail is the tombstone.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "content",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/pricing",
+          "expectContains": "Plans"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        },
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM orders",
+          "expectRows": "\">0\""
+        }
+      ],
+      "requires": [
+        "step-7"
+      ],
+      "gate": false,
+      "sourceLine": 80
+    }
+  ],
+  "compiledAt": "2026-09-26T07:04:44.196Z"
+}

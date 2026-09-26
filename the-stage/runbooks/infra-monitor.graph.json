@@ -1,0 +1,135 @@
+{
+  "runbook": "../the-stage/runbooks/infra-monitor.md",
+  "title": "Infra monitoring sweep — health, memory, capacity, cost signals (READ-ONLY)",
+  "revision": "284d849",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Snapshot service state and release",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Snapshot service state and release\nRecord the currently deployed release, leak flag, and memory footprint.\nThis is the \"baseline\" every later comparison is made against.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/admin/state",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 14
+    },
+    {
+      "id": "step-2",
+      "title": "Verify health marker and memory budget",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Verify health marker and memory budget\nHealth must report mem_ok. In a real cluster this maps to: RSS < limit on\nevery pod, p99 latency < SLO, error rate < 0.1%. A breach here halts and\npages — it never attempts a fix (that is a different runbook's job).",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 20
+    },
+    {
+      "id": "step-3",
+      "title": "Verify the full page surface renders",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Verify the full page surface renders\nExit codes lie; pixels don't. Every user-facing page must render its full\ncontent — this is the front-of-glass check, run every night, not just on\ndeploys.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "content",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/pricing",
+          "expectContains": "Plans"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 28
+    },
+    {
+      "id": "step-4",
+      "title": "Audit data-layer capacity",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Audit data-layer capacity\nRow count trend is the growth signal behind every capacity plan. On Swiggy\ninfrastructure this is the same query pattern against the orders/cassandra\nmetrics store: growth rate vs. provisioned headroom.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM orders",
+          "expectRows": "\">0\""
+        }
+      ],
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 38
+    },
+    {
+      "id": "step-5",
+      "title": "Verify no corrupted state is silently accumulating",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Verify no corrupted state is silently accumulating\nZero corrupted shards is the invariant. Anything above zero is a leading\nindicator of the retry-storm memory-leak incident — catch it here, at\n01:00 in a monitoring sweep, instead of at 03:00 as a SEV-2 page.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM cache_shards WHERE corrupted",
+          "expectRows": "\"=0\""
+        }
+      ],
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 45
+    },
+    {
+      "id": "step-6",
+      "title": "Compile the sweep report (agent-authored)",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Compile the sweep report (agent-authored)\nScout compiles every observation from steps 1–5 into a single report:\nrelease, memory trend, page-surface status, row-count trend, shard health.\nThe flywheel appends this as the runbook addendum, so each night's sweep\nbecomes a timestamped line of operational history. In production, the same\nstep would also gather: per-cluster node counts, pod counts, cost-usage\ndeltas vs. the weekly budget, and top-5 spend movers.",
+      "commands": [],
+      "probes": [],
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 52
+    }
+  ],
+  "compiledAt": "2026-09-26T07:04:19.036Z"
+}

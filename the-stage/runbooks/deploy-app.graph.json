@@ -1,0 +1,157 @@
+{
+  "runbook": "../the-stage/runbooks/deploy-app.md",
+  "title": "Deploy release v2.2.0 — with front-of-glass verification",
+  "revision": "284d849",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Inspect the current release and page surface",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Inspect the current release and page surface\nRecord the version currently in production and confirm the app responds.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/admin/state",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 11
+    },
+    {
+      "id": "step-2",
+      "title": "Stage the release on the twin",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Stage the release on the twin\nDeploy v2.2.0 to the staging twin and validate it there before prod:\n(code block — see commands)\nUndo: `curl -s -XPOST $TWIN_APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v1.42.0\"}'`",
+      "commands": [
+        "curl -s -XPOST $TWIN_APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v2.2.0\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "none — twin only",
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 16
+    },
+    {
+      "id": "step-3",
+      "title": "Smoke the twin's pages",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Smoke the twin's pages\nTwin must serve health and the pricing page before promotion is considered.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "command",
+          "target": "curl -s http://localhost:8081/healthz",
+          "expectContains": "ok"
+        },
+        {
+          "kind": "command",
+          "target": "curl -s http://localhost:8081/pricing",
+          "expectContains": "Pricing"
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 26
+    },
+    {
+      "id": "step-4",
+      "title": "Promote v2.2.0 to production",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Promote v2.2.0 to production\n(code block — see commands)\nUndo: `curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v1.42.0\"}'`",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v2.2.0\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "all users see the new release within seconds; rollback re-deploys v1.42.0 (~60s)",
+      "requires": [
+        "step-3"
+      ],
+      "gate": true,
+      "sourceLine": 32
+    },
+    {
+      "id": "step-5",
+      "title": "Front-of-glass verification of production pages",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Front-of-glass verification of production pages\nEVERY page must render its full content — including the status page.\nA 200 with a broken widget is a FAILED deploy.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "content",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/pricing",
+          "expectContains": "Plans"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 40
+    },
+    {
+      "id": "step-6",
+      "title": "Hotfix the status page asset",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Hotfix the status page asset\nIf step 5 caught a broken page: restore the missing asset. This is a\nreversible content fix, not a rollback.\n(code block — see commands)\nUndo: `curl -s -XPOST $APP_URL/admin/unfix-status`",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/fix-status"
+      ],
+      "probes": [],
+      "blastRadius": "none — restores a missing static asset",
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 49
+    },
+    {
+      "id": "step-7",
+      "title": "Re-verify the status page",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — Re-verify the status page\nThe status page must now render \"operational\". Only then is the deploy done.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-6"
+      ],
+      "gate": false,
+      "sourceLine": 60
+    }
+  ],
+  "compiledAt": "2026-09-26T05:18:52.705Z"
+}

@@ -1,0 +1,181 @@
+{
+  "runbook": "../the-stage/runbooks/release-rollout.md",
+  "title": "Release rollout — memory-leak fix, twin-first with human approval (signer-prod)",
+  "revision": "252f98d",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Baseline both environments",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Baseline both environments\nRecord prod (expected: leaking) and twin (expected: clean) before anything moves.\n(code block — see commands)",
+      "commands": [
+        "echo \"prod:\" && curl -s $APP_URL/admin/state | python3 -c \"import json,sys; d=json.load(sys.stdin); print(' ', d['version'], 'leak:', d['leakOn'], f\\\"{d['mem_mb']}MB\\\")\"\necho \"twin:\" && curl -s $TWIN_URL/admin/state | python3 -c \"import json,sys; d=json.load(sys.stdin); print(' ', d['version'], 'leak:', d['leakOn'], f\\\"{d['mem_mb']}MB\\\")\""
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectStatus": 200
+        },
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "twin": true,
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 18
+    },
+    {
+      "id": "step-2",
+      "title": "Deploy the fix to the STAGING TWIN first",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Deploy the fix to the STAGING TWIN first\nShip the fix release to the twin. Production is NOT touched in this step —\nthat is the whole point of the twin.\n(code block — see commands)",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v1.42.0\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "twin only — disposable clone; prod untouched",
+      "target": "twin",
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 29
+    },
+    {
+      "id": "step-3",
+      "title": "Verify the fix on the twin",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Verify the fix on the twin\nIndependent verification ON THE TWIN: health marker `mem_ok`, every public page\nrenders. The fix must be proven where it is safe before it goes anywhere else.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "twin": true,
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "http",
+          "target": "/",
+          "twin": true,
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/pricing",
+          "twin": true,
+          "expectContains": "Plans"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "twin": true,
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 38
+    },
+    {
+      "id": "step-4",
+      "title": "Soak analysis: is the leak actually gone? (sandbox-computed)",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Soak analysis: is the leak actually gone? (sandbox-computed)\nSample twin memory across the soak window and compute the growth rate. Use your\nsandboxed code execution (Daytona) for the regression math — sample, fit, and\ndecide with evidence. Branch explicitly:\n(code block — see commands)\nIf the fitted growth rate is ~0 MB/min → `BRANCH=leak-fixed — promote to\nproduction at the gate`. If memory still climbs → `BRANCH=still-leaking — HALT,\ndo not promote, escalate back to engineering`.",
+      "commands": [
+        "for i in 1 2 3 4 5; do curl -s $APP_URL/healthz | python3 -c \"import json,sys; print(json.load(sys.stdin)['mem_mb'])\"; sleep 2; done"
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "twin": true,
+          "expectContains": "mem_ok"
+        }
+      ],
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 47
+    },
+    {
+      "id": "step-5",
+      "title": "HUMAN GATE: promote the fix to production",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — HUMAN GATE: promote the fix to production\nOnly reached if step 4 proved `leak-fixed`. The card shows the twin evidence,\nthe soak analysis and the tested undo. Approving promotes the fix to prod:\n(code block — see commands)\nUndo (tested in rehearsal): re-deploy the leaky release\n`curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v2.1.0\"}'`",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v1.42.0\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "production release flip mid-incident; ~10s request churn; sessions preserved",
+      "requires": [
+        "step-4"
+      ],
+      "gate": true,
+      "sourceLine": 62
+    },
+    {
+      "id": "step-6",
+      "title": "Verify production is fixed",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Verify production is fixed\nProduction must end healthy: `mem_ok`, all pages rendering. Under continued\nscrape load the memory stays flat — the leak class is gone, not masked.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "http",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 74
+    },
+    {
+      "id": "step-7",
+      "title": "Evidence record for the release",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — Evidence record for the release\nFinal record: baseline → twin evidence → growth analysis → approval → prod\nstate. SCRIBE folds this into the runbook addendum — the next release starts\nfrom this receipt.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "slo_"
+        }
+      ],
+      "requires": [
+        "step-6"
+      ],
+      "gate": false,
+      "sourceLine": 82
+    }
+  ],
+  "compiledAt": "2026-09-26T11:34:12.490Z"
+}

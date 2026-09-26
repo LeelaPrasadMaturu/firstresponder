@@ -1,0 +1,182 @@
+{
+  "runbook": "../the-stage/runbooks/incident-memory-leak.md",
+  "title": "Memory-pressure incident — signer-prod (SEV-2)",
+  "revision": "252f98d",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Assess service health and memory",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Assess service health and memory\nCheck the health endpoint and current memory. If the health marker is\n`mem_high`, the leak is active. Record the release currently deployed.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 16
+    },
+    {
+      "id": "step-2",
+      "title": "Triage: branch on live memory level",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Triage: branch on live memory level\nRead the live memory level and take the matching branch. State explicitly which\nbranch you took and why:\n(code block — see commands)",
+      "commands": [
+        "MEM=$(curl -s $APP_URL/healthz | python3 -c \"import json,sys; print(json.load(sys.stdin)['mem_mb'])\")\nif [ \"${MEM:-0}\" -gt 400 ]; then\n  echo \"BRANCH=high-memory — leak is active and critical: proceed to root-cause, then rollback\"\nelse\n  echo \"BRANCH=low-memory — not yet critical: keep observing, re-check in 60s before acting\"\nfi"
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 22
+    },
+    {
+      "id": "step-3",
+      "title": "Confirm root cause in the cache layer",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Confirm root cause in the cache layer\nCorrelated symptom: a corrupted cache shard drives retry storms that amplify\nthe leak. Confirm at least one shard is flagged corrupted, and branch:\n(code block — see commands)",
+      "commands": [
+        "CORRUPT=$(docker exec prod-db psql -U stage -d stagedb -tA -c \"SELECT count(*) FROM cache_shards WHERE corrupted\")\nif [ \"${CORRUPT:-0}\" -ge 1 ]; then\n  echo \"BRANCH=purge-path — ${CORRUPT} corrupted shard(s): schedule the purge AFTER the rollback\"\nelse\n  echo \"BRANCH=retry-storm-path — no corrupted shards: investigate upstream retry counters instead\"\nfi"
+      ],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM cache_shards WHERE corrupted",
+          "expectRows": "\">0\""
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 37
+    },
+    {
+      "id": "step-4",
+      "title": "Pre-scale capacity if headroom is low (reversible)",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Pre-scale capacity if headroom is low (reversible)\nThe cache purge in a later step causes cache misses and a latency spike. Only add\ncapacity if headroom is low — branch on live traffic vs capacity:\n(code block — see commands)\nThis is reversible: `curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":4}'`\nrestores the original fleet size exactly.",
+      "commands": [
+        "RPS=$(curl -s $APP_URL/slo | python3 -c \"import json,sys; print(json.load(sys.stdin)['traffic_rps'])\")\nCAP=$(curl -s $APP_URL/slo | python3 -c \"import json,sys; print(json.load(sys.stdin)['capacity_rps'])\")\nif [ \"$RPS\" -gt $((CAP / 2)) ]; then\n  curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":14}'\n  echo \"BRANCH=headroom-low — pre-scaled to 14 replicas to absorb the purge latency spike\"\nelse\n  echo \"BRANCH=headroom-ok — no pre-scale needed\"\nfi"
+      ],
+      "probes": [],
+      "blastRadius": "brief extra spend (~$1.7/hr) while scaled; fully reversible via admin/scale",
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 52
+    },
+    {
+      "id": "step-5",
+      "title": "Roll the service back to the last known-good release",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Roll the service back to the last known-good release\nDeploy v1.42.0 — the last known-good release — to stop the leak:\n(code block — see commands)\nThis is reversible: v2.1.0 remains available; re-deploying it restores the\ncurrent state exactly.",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v1.42.0\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "brief request churn during rollout; sessions preserved",
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 71
+    },
+    {
+      "id": "step-6",
+      "title": "Verify the leak has stopped",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Verify the leak has stopped\nHealth must report `mem_ok` and all public pages must render.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "http",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/pricing",
+          "expectContains": "Plans"
+        }
+      ],
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 82
+    },
+    {
+      "id": "step-7",
+      "title": "Purge the corrupted cache shards",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — Purge the corrupted cache shards\nOnly proceed if the purge-path branch was taken in step 3 (corrupted shards exist).\nBack up the corrupted shards, then delete them so the cache layer rebuilds clean:\nBack up the corrupted shards, then delete them so the cache layer rebuilds clean:\n(code block — see commands)\nUndo: `docker exec prod-db psql -U stage -d stagedb -c \"INSERT INTO cache_shards (shard_key, payload, corrupted) SELECT shard_key, payload, true FROM cache_shards_backup\"`",
+      "commands": [
+        "docker exec prod-db psql -U stage -d stagedb -c \"CREATE TABLE IF NOT EXISTS cache_shards_backup AS SELECT * FROM cache_shards WHERE corrupted\"\ndocker exec prod-db psql -U stage -d stagedb -c \"DELETE FROM cache_shards WHERE corrupted\""
+      ],
+      "probes": [],
+      "blastRadius": "cache misses for ~5 min, API latency +200ms; 1 of 3 shards affected",
+      "undoHint": "docker exec prod-db psql -U stage -d stagedb -c \"INSERT INTO cache_shards (shard_key, payload, corrupted) SELECT shard_key, payload, true FROM cache_shards_backup\"",
+      "requires": [
+        "step-6"
+      ],
+      "gate": true,
+      "sourceLine": 89
+    },
+    {
+      "id": "step-8",
+      "title": "Verify cache layer and full page surface",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 8 — Verify cache layer and full page surface\nNo corrupted shards may remain, and every public page — including the status\npage — must render its full content.\n---",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "db",
+          "target": "SELECT count(*) FROM cache_shards WHERE corrupted",
+          "expectRows": "\"=0\""
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        },
+        {
+          "kind": "content",
+          "target": "/",
+          "expectContains": "ACME"
+        }
+      ],
+      "requires": [
+        "step-7"
+      ],
+      "gate": false,
+      "sourceLine": 103
+    }
+  ],
+  "compiledAt": "2026-09-26T10:55:21.305Z"
+}

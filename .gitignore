@@ -1,0 +1,10 @@
+# dependencies
+node_modules/
+
+# runtime state & secrets
+.firerun/
+.env
+*.log
+
+# OS
+.DS_Store

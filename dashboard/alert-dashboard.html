@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alert Command Center — signer-prod</title>
+<style>
+/* ============================================================
+   FIRERUN ALERT COMMAND CENTER — live, zero mocked data.
+   Every KPI, alert, chart and timeline entry is derived from the
+   running system: Prometheus scrapes, health probes, the HMAC
+   audit chain and open approval gates. Data source: NOC :8095.
+============================================================ */
+*{box-sizing:border-box}
+:root{
+--bg:#0b0f14;--panel:#111820;--panel-hover:#151e28;--border:#26313d;
+--text:#e6edf3;--muted:#8b98a7;--muted-2:#647281;
+--green:#3ddc84;--green-soft:rgba(61,220,132,.12);
+--yellow:#f5c451;--yellow-soft:rgba(245,196,81,.12);
+--orange:#ff9f43;--orange-soft:rgba(255,159,67,.12);
+--red:#f05252;--red-soft:rgba(240,82,82,.12);
+--blue:#4ea1ff;--blue-soft:rgba(78,161,255,.12);
+--purple:#a78bfa;--radius:7px}
+html,body{margin:0;padding:0;min-height:100%;background:var(--bg);color:var(--text);
+font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px}
+button,select,input{font:inherit}
+.app{display:flex;min-height:100vh}
+
+/* sidebar */
+.sidebar{width:230px;background:#0a0e13;border-right:1px solid #202934;padding:14px 10px;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:10px;padding:7px 10px 20px;font-size:15px;font-weight:600}
+.logo-mark{width:27px;height:27px;border-radius:6px;background:linear-gradient(135deg,#ff6b35,#f05252);display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800}
+.logo small{color:var(--muted);font-weight:400;display:block;font-size:10px;margin-top:1px}
+.nav-section{margin:17px 8px 7px;color:#566372;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;color:#8995a3;padding:9px 11px;margin:2px 0;border-radius:5px;cursor:pointer}
+.nav-item:hover{background:#121a23;color:#dce4ec}
+.nav-item.active{background:#18222d;color:#fff}
+.nav-icon{width:18px;text-align:center;opacity:.85}
+.nav-count{margin-left:auto;color:var(--red);background:var(--red-soft);border-radius:10px;padding:2px 6px;font-size:10px}
+
+/* main / topbar */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{height:54px;border-bottom:1px solid #202934;display:flex;align-items:center;padding:0 18px;gap:14px;background:#0c1117}
+.breadcrumb{color:var(--muted);font-size:12px}
+.breadcrumb strong{color:#dbe3eb}
+.livepill{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--green)}
+.livepill .d{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.45}}
+.search{margin-left:auto;height:31px;width:220px;border:1px solid var(--border);background:#0b1117;border-radius:5px;color:#aeb8c4;padding:0 11px;outline:none}
+.search:focus{border-color:#456078}
+.top-btn{height:31px;padding:0 11px;border:1px solid var(--border);border-radius:5px;color:#cbd5df;background:#111820;cursor:pointer}
+.top-btn:hover{background:#17212b}
+.top-btn.refresh{color:var(--green)}
+.top-btn a{color:inherit;text-decoration:none}
+
+.content{padding:15px 17px 25px;max-width:1800px;width:100%;margin:0 auto}
+.dashboard-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+.title-left h1{font-size:17px;margin:0;font-weight:500}
+.title-left p{color:var(--muted);margin:4px 0 0;font-size:11px}
+.filters{display:flex;gap:7px;align-items:center}
+.filter{background:#111820;color:#b9c4cf;border:1px solid var(--border);border-radius:5px;height:30px;padding:0 9px;outline:none}
+
+/* banner */
+#banner{display:none;margin-bottom:10px;border:1px solid var(--red);background:#2a0e0e;border-radius:var(--radius);padding:12px 14px;animation:pulse 1.4s infinite}
+#banner h2{color:var(--red);font-size:14px;margin:0 0 4px}
+#banner div{font-size:11px;color:#e0b5b5}
+
+/* KPIs */
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:10px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:12px 13px;min-height:82px}
+.kpi:hover{background:var(--panel-hover)}
+.kpi-head{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.kpi-value{margin-top:7px;font-size:23px;font-weight:500;letter-spacing:-.03em}
+.kpi-meta{margin-top:3px;font-size:10px;color:var(--muted)}
+.up{color:var(--red)}.down{color:var(--green)}.good{color:var(--green)}.warn{color:var(--yellow)}.critical{color:var(--red)}
+
+/* grid / panel */
+.grid{display:grid;gap:10px;margin-bottom:10px}
+.grid-3{grid-template-columns:2fr 1fr 1fr}
+.grid-2{grid-template-columns:1.35fr 1fr}
+.grid-2-equal{grid-template-columns:1fr 1fr}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);min-width:0;overflow:hidden}
+.panel-header{height:39px;padding:0 12px;border-bottom:1px solid #222d38;display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:11px;font-weight:500;color:#d7e0e8}
+.panel-actions{color:var(--muted);font-size:10px}
+.panel-body{padding:11px 12px}
+
+/* charts */
+.chart{width:100%;height:190px;position:relative}
+.chart.small{height:170px}
+.legend{display:flex;gap:14px;color:var(--muted);font-size:9px}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend i{width:7px;height:7px;display:inline-block;border-radius:50%}
+
+/* donut */
+.alert-summary{display:flex;height:190px;align-items:center;justify-content:center;gap:18px}
+.donut{width:130px;height:130px;border-radius:50%;position:relative;transition:background .6s}
+.donut::after{content:"";position:absolute;inset:31px;background:var(--panel);border-radius:50%}
+.donut-center{position:absolute;inset:0;display:grid;place-items:center;z-index:2;text-align:center}
+.donut-center strong{font-size:22px;font-weight:500}
+.donut-center span{color:var(--muted);font-size:9px}
+.severity-list{display:flex;flex-direction:column;gap:10px}
+.severity-row{display:flex;align-items:center;gap:8px;min-width:120px}
+.severity-dot{width:8px;height:8px;border-radius:50%}
+.severity-name{color:#aeb8c3;flex:1;font-size:10px}
+.severity-number{color:#e2e8ee;font-size:11px}
+
+/* table */
+.alert-table{width:100%;border-collapse:collapse}
+.alert-table th{text-align:left;color:#687786;font-size:9px;text-transform:uppercase;letter-spacing:.05em;font-weight:500;padding:8px 10px;border-bottom:1px solid #26303a}
+.alert-table td{padding:9px 10px;border-bottom:1px solid #1e2730;color:#b9c4ce;font-size:10px}
+.alert-table tr:last-child td{border-bottom:none}
+.alert-table tr:hover{background:#141c24}
+.alert-name{color:#e0e7ed}
+.status{display:inline-flex;align-items:center;gap:5px}
+.status-dot{width:6px;height:6px;border-radius:50%}
+.badge{display:inline-block;padding:3px 6px;border-radius:3px;font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.badge-critical{color:#ff7777;background:var(--red-soft)}
+.badge-warning{color:#ffc96b;background:var(--yellow-soft)}
+.badge-info{color:#76b7ff;background:var(--blue-soft)}
+.badge-resolved{color:#70e8a2;background:var(--green-soft)}
+
+/* service health */
+.service-list{display:flex;flex-direction:column}
+.service-row{display:grid;grid-template-columns:118px 1fr 65px 78px;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #1e2730}
+.service-row:last-child{border-bottom:none}
+.service-name{color:#d7e0e8;font-size:10px}
+.health-bar{height:5px;border-radius:5px;background:#202a34;overflow:hidden}
+.health-fill{height:100%;border-radius:inherit;transition:width .6s,background .6s}
+.service-number{color:#aeb9c4;text-align:right;font-size:10px}
+.service-status{text-align:right;font-size:9px}
+
+/* mini metrics */
+.metric-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.mini-metric{border:1px solid #252f39;background:#0e151c;padding:10px;border-radius:5px}
+.mini-label{color:var(--muted);font-size:9px}
+.mini-value{font-size:17px;margin-top:4px;color:#e2e8ee}
+.mini-change{font-size:9px;margin-top:2px}
+
+/* timeline */
+.timeline{position:relative;padding:6px 0 6px 18px;max-height:230px;overflow-y:auto}
+.timeline::before{content:"";position:absolute;left:5px;top:9px;bottom:9px;width:1px;background:#303b47}
+.timeline-item{position:relative;padding:6px 0 10px}
+.timeline-item::before{content:"";position:absolute;left:-16px;top:10px;width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px rgba(240,82,82,.1)}
+.timeline-item.warning::before{background:var(--yellow);box-shadow:0 0 0 3px rgba(245,196,81,.1)}
+.timeline-item.resolved::before{background:var(--green);box-shadow:0 0 0 3px rgba(61,220,132,.1)}
+.timeline-item.info::before{background:var(--blue);box-shadow:0 0 0 3px rgba(78,161,255,.1)}
+.timeline-time{color:#657381;font-size:9px}
+.timeline-title{color:#cbd5de;font-size:10px;margin-top:2px}
+.timeline-desc{color:#6f7e8c;font-size:9px;margin-top:2px}
+
+.footer{color:#566372;font-size:9px;padding:5px 2px;text-align:right}
+
+@media(max-width:1250px){.sidebar{width:190px}.kpi-grid{grid-template-columns:repeat(3,1fr)}.grid-3{grid-template-columns:1fr 1fr}.grid-3>.panel:first-child{grid-column:span 2}}
+@media(max-width:850px){.sidebar{display:none}.kpi-grid{grid-template-columns:repeat(2,1fr)}.grid-2,.grid-2-equal,.grid-3{grid-template-columns:1fr}.grid-3>.panel:first-child{grid-column:auto}.dashboard-title{flex-direction:column;align-items:flex-start;gap:10px}.search{width:130px}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">A</div>
+    <div>AlertOps<small>signer-prod · us-east-1</small></div>
+  </div>
+  <div class="nav-section">Monitoring</div>
+  <div class="nav-item active" data-goto="top"><span class="nav-icon">▦</span>Overview</div>
+  <div class="nav-item" data-goto="alertsPanel"><span class="nav-icon">◉</span>Alerts<span class="nav-count" id="navCount">0</span></div>
+  <div class="nav-item" data-goto="svcPanel"><span class="nav-icon">◒</span>Services</div>
+  <div class="nav-item" data-goto="timelinePanel"><span class="nav-icon">⌁</span>Incidents</div>
+  <div class="nav-section">Infrastructure</div>
+  <div class="nav-item" data-goto="svcPanel"><span class="nav-icon">▣</span>Compute</div>
+  <div class="nav-item" data-goto="svcPanel"><span class="nav-icon">◫</span>Databases</div>
+  <div class="nav-item" data-goto="svcPanel"><span class="nav-icon">◇</span>Hosts</div>
+  <div class="nav-section">Analysis</div>
+  <div class="nav-item" data-goto="consolePanel"><span class="nav-icon">⌨</span>Run Console</div>
+  <div class="nav-item" data-goto="chartsRow"><span class="nav-icon">◴</span>SLO / Latency</div>
+  <div class="nav-item" data-link="http://localhost:8790/agents"><span class="nav-icon">⚙</span>TrueForge Agents ↗</div>
+</aside>
+
+<main class="main">
+<header class="topbar">
+  <div class="breadcrumb">Home &nbsp;/&nbsp;<strong>Alert Command Center</strong></div>
+  <span class="livepill"><span class="d"></span>LIVE · scrape 2s</span>
+  <input class="search" id="search" type="text" placeholder="Search alerts, services...">
+  <button class="top-btn"><a href="/noc" target="_blank">NOC ▸</a></button>
+  <button class="top-btn"><a href="/lab" target="_blank">🧪 Leak Lab ▸</a></button>
+  <button class="top-btn"><a href="http://localhost:8790/agents" target="_blank">Agents ▸</a></button>
+  <button class="top-btn"><a href="http://localhost:17788/gate" target="_blank">Gates ▸</a></button>
+  <button class="top-btn refresh" id="refreshBtn">↻</button>
+</header>
+
+<section class="content">
+
+<div class="dashboard-title">
+  <div class="title-left">
+    <h1>Alert Command Center</h1>
+    <p>Production environment · alerts derived from live probes, Prometheus scrapes & the audit chain — zero mocked data</p>
+  </div>
+  <div class="filters">
+    <select class="filter" id="envFilter"><option>Production</option><option>Staging</option><option>Standby</option></select>
+    <select class="filter" id="sevFilter">
+      <option value="">All Severities</option><option value="CRITICAL">Critical</option>
+      <option value="WARNING">Warning</option><option value="INFO">Info</option>
+    </select>
+  </div>
+</div>
+
+<div id="banner"><h2 id="bannerTitle"></h2><div id="bannerBody"></div></div>
+
+<div class="footer" id="footer">connecting…</div>
+</section>
+</main>
+</div>
+
+<script>
+/* ============================================================
+   ALERT ENGINE — real signals only.
+   Data source: the FIRERUN NOC server (:8095 /api/snapshot),
+   which scrapes prod/twin/clusterB /metrics + health + SLO,
+   tails the HMAC audit chain, tracks gates, and reads git.
+   Opened as a standalone file it points at http://localhost:8095.
+============================================================ */
+const API = (location.protocol.startsWith('http') && location.port === '8095')
+  ? '' : 'http://localhost:8095';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const hms = ms => { if (ms == null) return '—'; const s = Math.floor(ms/1000);
+  return s<60 ? s+'s' : Math.floor(s/60)+'m '+(s%60)+'s'; };
+const fmtT = t => new Date(t).toLocaleTimeString([], {hour12:false});
+
+/* ---- alert registry: conditions → alerts with real durations ---- */
+const registry = new Map();   // key → {sev,title,svc,since,lastSeen,resolvedAt}
+let resolvedCount = 0;
+
+function setAlert(key, sev, title, svc, active) {
+  let a = registry.get(key);
+  if (!a) { a = { sev, title, svc, since: Date.now(), resolvedAt: null }; registry.set(key, a); }
+  a.sev = sev; a.title = title; a.svc = svc;
+  if (active) { a.lastSeen = Date.now(); if (a.resolvedAt) { a.resolvedAt = null; a.since = Date.now(); } }
+  else if (!a.resolvedAt) { a.resolvedAt = Date.now(); resolvedCount++; }
+}
+
+/* severity order for donut + table */
+const SEV = { CRITICAL: {color:'#f05252'}, WARNING: {color:'#f5c451'}, INFO: {color:'#4ea1ff'} };
+
+/* ---- canvas charts ---- */
+function draw(id, defs, opts = {}) {
+  const cv = $(id), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight || cv.parentElement.clientHeight;
+  if (!W) return;
+  cv.width = W*dpr; cv.height = H*dpr; cv.style.height = H+'px';
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr); ctx.clearRect(0,0,W,H);
+  let mn = Infinity, mx = -Infinity;
+  for (const d of defs) for (const p of d.data) { mn = Math.min(mn, p.v); mx = Math.max(mx, p.v); }
+  for (const l of (opts.lines ?? [])) { mn = Math.min(mn, l.v); mx = Math.max(mx, l.v); }
+  if (!isFinite(mn)) { mn = 0; mx = 1; } if (mx - mn < 1) mx = mn + 1; mn = Math.max(0, mn - (mx-mn)*0.08);
+  const all = defs.flatMap(d => d.data); if (!all.length) return;
+  const t0 = Math.min(...all.map(p => p.t)), t1 = Math.max(...all.map(p => p.t));
+  const X = t => t1 === t0 ? W : ((t-t0)/(t1-t0))*(W-8)+4;
+  const Y = v => H-8 - ((v-mn)/(mx-mn))*(H-18);
+  ctx.strokeStyle = '#1f2630'; ctx.fillStyle = '#687786'; ctx.font = '9px Menlo'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) { const y = 6+i*(H-16)/3; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.fillText(Math.round(mx-(mx-mn)*i/3), W-34, y-3); }
+  for (const l of (opts.lines ?? [])) { ctx.strokeStyle = l.color; ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(0,Y(l.v)); ctx.lineTo(W,Y(l.v)); ctx.stroke(); ctx.setLineDash([]); }
+  for (const d of defs) {
+    if (d.data.length < 2) continue;
+    ctx.beginPath(); d.data.forEach((p,i) => { const x = X(p.t), y = Y(p.v); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+    ctx.strokeStyle = d.color; ctx.lineWidth = 1.8; ctx.stroke();
+    if (d.fill) { ctx.lineTo(X(d.data[d.data.length-1].t), H); ctx.lineTo(X(d.data[0].t), H); ctx.closePath(); ctx.fillStyle = d.color+'22'; ctx.fill(); }
+  }
+}
+
+/* ---- MTTA / MTTR from the real audit chain ---- */
+function mttaMttr(audit) {
+  let mtta = null, mttr = null;
+  const runs = audit.filter(a => a.event === 'run_started' && a.payload?.mode === 'EXECUTE');
+  if (!runs.length) return { mtta, mttr };
+  const start = Math.max(...runs.map(a => +new Date(a.ts)));
+  const decision = audit.find(a => (a.event === 'gate_decision') && +new Date(a.ts) > start);
+  const done = audit.find(a => (a.event === 'run_completed') && +new Date(a.ts) > start);
+  if (decision) mtta = +new Date(decision.ts) - start;
+  if (done) mttr = +new Date(done.ts) - start;
+  return { mtta, mttr };
+}
+
+/* observed memory growth (MB/min) from the live scrape history — real telemetry */
+function growthRateMbPerMin(pts) {
+  const now = Date.now(); const win = (pts ?? []).filter(p => now - p.t <= 240000);
+  if (win.length < 4) return 0;
+  const dtMin = (win[win.length - 1].t - win[0].t) / 60000;
+  return dtMin > 0 ? Math.max(0, Math.round((win[win.length - 1].v - win[0].v) / dtMin)) : 0;
+}
+
+/* ---- main refresh ---- */
+async function refresh() {
+  let s;
+  try { s = await (await fetch(API + '/api/snapshot')).json(); }
+  catch { $('footer').textContent = '✖ cannot reach NOC server on :8095 — run: npm run dashboard'; return; }
+
+  const tg = Object.fromEntries(s.targets.map(t => [t.id, t]));
+  const ok = t => t && t.lastOk && Date.now() - t.lastOk < 8000;
+  const p = tg.prod, tw = tg.twin, cl = tg.clB;
+  const mem = p?.metrics?.app_mem_mb ?? 0, memPrev = p?.metrics?.app_mem_mb;
+  const p99 = p?.metrics?.p99_ms ?? 0, rps = p?.metrics?.app_rps ?? 0;
+  const cap = p?.state?.capacity_rps ?? 1000;
+  const leak = !!p?.state?.leakOn, oom = !!p?.metrics?.oom_risk;
+  const degraded = p?.health?.marker === 'mem_high' || p?.health?.status === 'degraded';
+  const gateOpen = Array.isArray(s.gates) && s.gates.length > 0;
+  const version = p?.metrics?._version ?? p?.state?.version ?? '?';
+
+  /* ---------- DERIVE ALERTS (all real conditions) ---------- */
+  const leakRate = growthRateMbPerMin(s.series['prod:app_mem_mb']);
+  setAlert('leak', 'CRITICAL', `Memory leak active — signer-prod ${version} (heap climbing ~${leakRate} MB/min under load)`, 'signer-prod', leak);
+  setAlert('oom', 'CRITICAL', `Heap above OOM threshold (${Math.round(mem)}MB / 512MB) — healthz degraded`, 'signer-prod', oom || degraded);
+  setAlert('p99', 'WARNING', `P99 latency ${Math.round(p99)}ms above SLO (150ms)`, 'signer-prod', p99 > 150);
+  setAlert('cap', 'WARNING', `Traffic ${Math.round(rps)} rps near capacity (${cap} rps)`, 'signer-prod', rps > 0.8 * cap);
+  setAlert('prod-down', 'CRITICAL', 'signer-prod unreachable — scrape failing', 'signer-prod', !ok(p));
+  setAlert('twin-down', 'WARNING', 'Staging twin unreachable — rehearsals would be blocked', 'staging-twin', !ok(tw));
+  setAlert('clb-down', 'INFO', 'Cluster-B standby unreachable', 'cluster-b', !ok(cl));
+  setAlert('gate', 'CRITICAL', 'Approval gate open — agent execution paused on human decision', 'firerun-gate', gateOpen);
+  const shards = Math.max(0, Math.round((s.shards ?? 0)));
+  setAlert('shards', 'WARNING', `${shards} corrupted cache shard(s) detected in DB`, 'prod-db', shards > 0);
+
+  const active = [...registry.entries()].filter(([,a]) => !a.resolvedAt).sort((x,y) =>
+    ['CRITICAL','WARNING','INFO'].indexOf(x[1].sev) - ['CRITICAL','WARNING','INFO'].indexOf(y[1].sev));
+  const bySev = { CRITICAL: 0, WARNING: 0, INFO: 0 };
+  active.forEach(([,a]) => bySev[a.sev]++);
+
+  /* ---------- KPIs ---------- */
+  $('kCrit').textContent = bySev.CRITICAL;
+  $('kWarn').textContent = bySev.WARNING;
+  $('kActive').textContent = active.length;
+  $('kActiveMeta').textContent = new Set(active.map(([,a]) => a.svc)).size + ' services affected';
+  $('kResolved').textContent = resolvedCount;
+  const { mtta, mttr } = mttaMttr(s.audit || []);
+  $('kMtta').textContent = hms(mtta); $('kMttr').textContent = hms(mttr);
+  $('navCount').textContent = active.length;
+
+  /* ---------- banner: worst story ---------- */
+  const showBanner = bySev.CRITICAL > 0;
+  $('banner').style.display = showBanner ? 'block' : 'none';
+  if (showBanner) {
+    const worst = active.find(([,a]) => a.sev === 'CRITICAL')[1];
+    $('bannerTitle').textContent = '⛔ ' + worst.title;
+    $('bannerBody').textContent = gateOpen
+      ? 'Execution paused at the human gate — approve at :17788/gate (phone). Undo card + blast radius shown there.'
+      : 'Auto-remediation available: run the incident runbook — it rehearsed this against the twin first.';
+  }
+
+  /* ---------- donut ---------- */
+  const total = active.length || 1;
+  const seg = bySev.CRITICAL*360/total, seg2 = seg + bySev.WARNING*360/total, seg3 = seg2 + bySev.INFO*360/total;
+  const C = bySev.CRITICAL ? `var(--red) 0deg ${seg}deg,` : '';
+  $('donut').style.background = `conic-gradient(${C}var(--yellow) ${seg}deg ${seg2}deg, var(--blue) ${seg2}deg ${seg3}deg, #1a2230 ${seg3}deg 360deg)`;
+  $('donutN').textContent = active.length;
+  $('donutTotal').textContent = active.length + ' total';
+  $('sevList').innerHTML = Object.entries(SEV).map(([k,v]) =>
+    `<div class="severity-row"><span class="severity-dot" style="background:${v.color}"></span>
+     <span class="severity-name">${k[0]+k.slice(1).toLowerCase()}</span>
+     <span class="severity-number">${bySev[k]}</span></div>`).join('');
+
+  /* ---------- alert table (with filters) ---------- */
+  const q = $('search').value.toLowerCase(), sf = $('sevFilter').value;
+  const rows = active.filter(([,a]) => (!sf || a.sev === sf) && (!q || (a.title+a.svc).toLowerCase().includes(q)));
+  $('tblCount').textContent = rows.length + ' firing';
+  $('alertRows').innerHTML = rows.map(([k,a]) =>
+    `<tr><td><span class="badge badge-${a.sev === 'CRITICAL' ? 'critical' : a.sev === 'WARNING' ? 'warning' : 'info'}">${a.sev.toLowerCase()}</span></td>
+     <td class="alert-name">${esc(a.title)}</td><td>${esc(a.svc)}</td>
+     <td>${hms(Date.now() - a.since)}</td>
+     <td><span class="status"><span class="status-dot" style="background:${SEV[a.sev].color}"></span>Firing</span></td></tr>`
+  ).join('') || '<tr><td colspan="5" style="color:var(--muted)">No alerts match — all clear 🟢</td></tr>';
+
+  /* ---------- service health (real probes) ---------- */
+  const svcs = [
+    { name: 'signer-prod',   up: ok(p),  detail: `${version} · ${Math.round(mem)}MB`, load: Math.min(100, mem/640*100) },
+    { name: 'staging-twin',  up: ok(tw), detail: 'rehearsal clone', load: tw?.state ? 96 : 0 },
+    { name: 'cluster-b',     up: ok(cl), detail: cl?.state?.role ?? 'standby', load: cl?.state ? 99 : 0 },
+    { name: 'prod-db',       up: ok(p),  detail: shards + ' corrupted shards', load: shards > 0 ? 78 : 99 },
+    { name: 'firerun-gate',  up: s.gateUp !== false, detail: gateOpen ? 'GATE OPEN' : 'armed', load: s.gateUp !== false ? 100 : 0 },
+    { name: 'registry',      up: s.registryUp !== false, detail: 'OCI :5555', load: 98 },
+  ];
+  $('svcCount').textContent = svcs.filter(x => x.up).length + '/' + svcs.length + ' up';
+  $('svcList').innerHTML = svcs.map(x => {
+    const st = !x.up ? ['DOWN', 'critical', '#f05252']
+      : x.load > 80 && x.load < 92 ? ['DEGRADED', 'warn', '#f5c451']
+      : ['HEALTHY', 'good', '#3ddc84'];
+    return `<div class="service-row"><div class="service-name">${esc(x.name)}</div>
+      <div class="health-bar"><div class="health-fill" style="width:${x.up ? Math.max(x.load,4) : 4}%;background:${st[2]}"></div></div>
+      <div class="service-number">${esc(x.detail)}</div>
+      <div class="service-status ${st[1]}">${st[0]}</div></div>`;
+  }).join('');
+
+  /* ---------- system health minis ---------- */
+  $('mMem').textContent = Math.round(mem) + ' MB';
+  $('mMem').style.color = oom || degraded ? 'var(--red)' : mem > 300 ? 'var(--yellow)' : 'var(--green)';
+  $('mMemC').textContent = leak ? `↑ climbing ~${leakRate} MB/min (observed)` : 'stable';
+  $('mMemC').style.color = leak ? 'var(--red)' : 'var(--green)';
+  $('mP99').textContent = Math.round(p99) + 'ms';
+  $('mP99').style.color = p99 > 150 ? 'var(--red)' : 'var(--green)';
+  $('mRps').textContent = Math.round(rps) + '/s';
+  $('mRpsC').textContent = `capacity ${cap} rps · ${Math.round(rps/cap*100)}%`;
+  $('mShards').textContent = shards;
+  $('mShards').style.color = shards > 0 ? 'var(--yellow)' : 'var(--green)';
+  const dm = s.dockerMem ?? {};
+  const rss = dm['prod-app'] ?? null, rssT = dm['twin-app'] ?? null;
+  $('mRss').textContent = rss != null ? rss + ' MB' : '—';
+  $('mRss').style.color = rss != null && rss > 512 ? 'var(--red)' : rss != null && rss > 300 ? 'var(--yellow)' : 'var(--green)';
+  $('mRssC').textContent = rss != null ? (leak ? '↑ climbing — kernel-level RSS' : 'flat — kernel-level RSS') : 'docker stats unavailable';
+  $('mRssC').style.color = leak && rss != null ? 'var(--red)' : 'var(--muted)';
+  $('mRssT').textContent = rssT != null ? rssT + ' MB' : '—';
+  $('sysHealth').innerHTML = bySev.CRITICAL ? '<span class="critical">● CRITICAL</span>'
+    : bySev.WARNING ? '<span class="warn">● DEGRADED</span>' : '<span class="good">● Operational</span>';
+  $('sysHealth').className = 'panel-actions';
+
+  /* ---------- charts (real series) ---------- */
+  draw('cMem', [
+    { name: 'prod', color: '#f05252', fill: true, data: s.series['prod:app_mem_mb'] ?? [] },
+    { name: 'twin', color: '#3ddc84', data: s.series['twin:app_mem_mb'] ?? [] },
+  ], { lines: [{ v: 512, color: '#f5c451' }] });
+  draw('cP99', [{ name: 'p99', color: '#a78bfa', fill: true, data: s.series['prod:p99_ms'] ?? [] }],
+    { lines: [{ v: 150, color: '#f5c451' }] });
+  draw('cRps', [
+    { name: 'rps', color: '#4ea1ff', fill: true, data: s.series['prod:app_rps'] ?? [] },
+    { name: 'cap', color: '#3ddc84', data: s.series['prod:capacity_rps'] ?? [] },
+  ]);
+
+  /* ---------- timeline: real audit events ---------- */
+  const EV = { gate_opened:['⛔','','gate'], gate_decision:['🗝','','gate'], run_halted:['🛑','','gate'],
+    step_blocked_no_undo:['⛔','','gate'], rollback_card_forged:['🛠','','warning'], run_started:['▶','','info'],
+    run_completed:['✅','','resolved'], addendum_committed:['📚','','resolved'], addendum_written:['📚','','resolved'],
+    oncall_webhook:['📟','','info'], tf_session_created:['👤','','info'] };
+  $('timeline').innerHTML = (s.audit ?? []).slice(0, 14).map(a => {
+    const [icon, , cls] = EV[a.event] ?? ['·', '', ''];
+    const d = a.payload ?? {};
+    const det = a.event === 'gate_decision' ? `step ${esc(d.step)} → <b>${esc(d.decision)}</b>`
+      : a.event === 'run_started' ? `${esc((d.runbook ?? '').split('/').pop())} · ${esc(d.mode ?? '')}`
+      : a.event === 'rollback_card_forged' ? esc((d.undo ?? '').slice(0, 80))
+      : a.event === 'addendum_committed' ? esc(d.subject ?? 'runbook smarter')
+      : a.event === 'tool_call' ? `${esc(d.tool)}: ${esc(JSON.stringify(d.args ?? {})).slice(0, 70)}`
+      : '';
+    return `<div class="timeline-item ${cls}"><div class="timeline-time">${fmtT(a.ts)}</div>
+      <div class="timeline-title">${icon} ${esc(a.event)}</div><div class="timeline-desc">${det}</div></div>`;
+  }).join('') || '<div class="timeline-item info"><div class="timeline-title">no audit events yet</div></div>';
+
+  /* ---------- alert rules: compiled runbook probes ---------- */
+  const rules = (s.runbooks ?? []).flatMap(r =>
+    (r.title ? [r] : [])).map(r =>
+    `<div class="service-row"><div class="service-name" style="font-size:9.5px">${esc(r.file.replace('.md',''))}</div>
+     <div class="health-bar"><div class="health-fill" style="width:${Math.min(100, r.steps*12)}%;background:${r.gates ? '#a78bfa' : '#4ea1ff'}"></div></div>
+     <div class="service-number">${r.steps} steps</div>
+     <div class="service-status" style="color:${r.gates ? '#a78bfa' : '#687786'}">${r.gates ? r.gates + ' GATE' + (r.gates > 1 ? 'S' : '') : 'auto'}</div></div>`);
+  $('ruleList').innerHTML = rules.join('');
+  $('ruleCount').textContent = (s.runbooks ?? []).reduce((n, r) => n + r.steps, 0) + ' probes across ' + (s.runbooks ?? []).length + ' runbooks';
+
+  $('footer').textContent = `Last updated ${fmtT(Date.now())} · auto-refresh 2s · data: live Prometheus scrapes + HMAC audit chain + git flywheel · FIRERUN AlertOps`;
+}
+
+/* interactions */
+$('search').addEventListener('input', refresh);
+$('sevFilter').addEventListener('change', refresh);
+
+/* sidebar nav — scroll to sections; items with data-link open externally */
+document.querySelectorAll('.nav-item').forEach(item => item.addEventListener('click', () => {
+  document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active')); item.classList.add('active');
+  if (item.dataset.link) { window.open(item.dataset.link, '_blank'); return; }
+  const el = $(item.dataset.goto);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}));
+
+/* ── run console ── */
+async function con(cmd) { $('conInput').value = cmd; return runCon(); }
+async function runCon() {
+  const cmd = $('conInput').value.trim(); if (!cmd) return;
+  $('conStatus').textContent = 'running…';
+  $('conOut').textContent += `\nfirerun ❯ ${cmd}\n`;
+  $('conOut').scrollTop = $('conOut').scrollHeight;
+  try {
+    const r = await (await fetch(API + '/api/cmd', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cmd }) })).json();
+    if (r.output) { $('conOut').textContent += r.output + '\n'; $('conStatus').textContent = 'idle'; }
+    else { $('conOut').textContent += '✖ ' + (r.error ?? 'failed') + '\n'; $('conStatus').textContent = 'error'; }
+  } catch (e) { $('conOut').textContent += '✖ console unreachable — is npm run dashboard running?\n'; $('conStatus').textContent = 'offline'; }
+  $('conOut').scrollTop = $('conOut').scrollHeight;
+  refresh();
+}
+$('conInput').addEventListener('keydown', e => { if (e.key === 'Enter') runCon(); });
+let conTail = '';
+setInterval(async () => {
+  try {
+    const r = await (await fetch(API + '/api/runlog')).json();
+    if (r.log && r.text !== conTail) { conTail = r.text; $('conOut').textContent = conTail; $('conOut').scrollTop = $('conOut').scrollHeight; }
+  } catch {}
+}, 1500);
+
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>

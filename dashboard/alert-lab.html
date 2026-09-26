@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leak Lab — FIRERUN</title>
+<style>
+:root{--bg:#0b0f14;--panel:#111820;--border:#26313d;--text:#e6edf3;--muted:#8b98a7;
+--green:#3ddc84;--yellow:#f5c451;--red:#f05252;--blue:#4ea1ff;--purple:#a78bfa}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,system-ui,-apple-system,sans-serif;padding:18px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+h1{font-size:17px;margin:0;font-weight:600}
+h1 b{color:var(--purple)}
+.pill{padding:4px 12px;border-radius:20px;border:1px solid var(--border);font-size:11px;color:var(--muted)}
+.pill.bad{color:var(--red);border-color:#5c1a1a;background:#2a0e0e;animation:pulse 1.2s infinite}
+.pill.ok{color:var(--green);border-color:#1d4428;background:#0f1f14}
+@keyframes pulse{50%{opacity:.5}}
+.spacer{flex:1}
+a.btn{display:inline-block;padding:6px 12px;border:1px solid var(--border);border-radius:6px;color:#cbd5df;text-decoration:none;font-size:11px}
+a.btn:hover{border-color:var(--purple);color:var(--purple)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
+.panel h2{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin:0 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+label{color:var(--muted);font-size:11px}
+input{width:60px;height:30px;background:#0b1117;border:1px solid var(--border);border-radius:5px;color:#d7e0e8;padding:0 8px;font:12px Menlo;outline:none}
+button{background:#161c26;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 13px;font:12px Inter;cursor:pointer}
+button:hover{border-color:var(--cyan,#39d2c0);color:#39d2c0}
+button.danger{border-color:#5c1a1a;color:var(--red)}
+button.go{border-color:#1d4428;color:var(--green)}
+.note{color:var(--muted);font-size:10.5px;margin-top:8px}
+canvas{width:100%;height:180px;display:block}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px}
+.kpi .l{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:21px;margin-top:5px}
+.grow{color:var(--red)}.flat{color:var(--green)}
+footer{color:#566372;font-size:10px;text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧪 FIRERUN <b>Leak Lab</b></h1>
+  <span class="pill" id="relPill">release: —</span>
+  <span class="pill ok" id="leakPill">no leak</span>
+  <div class="spacer"></div>
+  <a class="btn" href="/">← Dashboard</a>
+  <a class="btn" href="/noc" target="_blank">NOC ▸</a>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="l">prod memory (app)</div><div class="v" id="kMem">—</div></div>
+  <div class="kpi"><div class="l">observed growth</div><div class="v" id="kRate">—</div></div>
+  <div class="kpi"><div class="l">container RSS (kernel)</div><div class="v" id="kRss">—</div></div>
+  <div class="kpi"><div class="l">twin memory (control)</div><div class="v" id="kTwin">—</div></div>
+</div>
+
+<div class="panel">
+  <h2>Load simulator — requests against the live release</h2>
+  <div class="row">
+    <label>requests/burst</label><input id="simN" value="3">
+    <label>gap (sec)</label><input id="simI" value="2">
+    <label>bursts</label><input id="simB" value="20">
+    <button class="danger" onclick="con('deploy v2.1.0')">1 · Deploy the leaky release</button>
+    <button class="go" onclick="simStart()">2 · Start load</button>
+    <button onclick="con('simstop')">■ Stop load</button>
+    <button onclick="con('rollback')">3 · Rollback to v1.42.0 (fix)</button>
+  </div>
+  <div class="note">Deploy the buggy release, start the load, and watch both memory lines: the app-reported heap <i>and</i> the kernel's container RSS climb together — real allocations in a real container. Roll back and the same load stops moving memory: the leak class is gone, not masked.</div>
+</div>
+
+<div class="panel">
+  <h2>Scenario triggers — arm the real conditions behind each runbook</h2>
+  <div class="row">
+    <button class="danger" onclick="con('deploy v2.1.0')">💧 memory leak</button>
+    <button class="danger" onclick="con('traffic 4200')">📈 latency spike (4200 rps)</button>
+    <button class="danger" onclick="con('pool event-pool 6')">💸 orphaned pool ($/day burning)</button>
+    <button onclick="con('traffic 1000')">↩ normal traffic</button>
+    <button onclick="con('pool event-pool 0')">↩ clear pool</button>
+  </div>
+  <div class="row" style="margin-top:4px">
+    <button class="go" onclick="con('canary')">🛡 canary guard — rehearse → execute → auto-rollback</button>
+    <button style="border-color:#4c3a75;color:var(--purple)" onclick="con('rollout')">🚦 release-rollout — twin → soak → approval gate → prod</button>
+    <button style="border-color:#4c3a75;color:var(--purple)" onclick="con('incident')">🚨 incident flow — on-call with phone gate</button>
+  </div>
+  <div class="note">Composites run rehearse → execute and stream into the Run Console on the main dashboard. The release-rollout pauses at a human approval card before production.</div>
+</div>
+
+<div class="panel">
+  <h2>Live memory — prod vs twin (MB)</h2>
+  <canvas id="cMem"></canvas>
+</div>
+
+<footer id="footer">connecting…</footer>
+
+<script>
+const API = (location.protocol.startsWith('http') && location.port === '8095') ? '' : 'http://localhost:8095';
+const $ = id => document.getElementById(id);
+const fmtT = t => new Date(t).toLocaleTimeString([], {hour12:false});
+
+function draw(id, defs, oom) {
+  const cv = $(id), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.height;
+  cv.width = W*dpr; const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr); ctx.clearRect(0,0,W,H);
+  let mn = Infinity, mx = -Infinity;
+  for (const d of defs) for (const p of d.data) { mn = Math.min(mn, p.v); mx = Math.max(mx, p.v); }
+  if (oom != null) { mn = Math.min(mn, 0); mx = Math.max(mx, oom*1.08); }
+  if (!isFinite(mn)) { mn = 0; mx = 1; } if (mx-mn < 1) mx = mn+1;
+  const all = defs.flatMap(d => d.data); if (all.length < 2) return;
+  const t0 = Math.min(...all.map(p => p.t)), t1 = Math.max(...all.map(p => p.t));
+  const X = t => t1 === t0 ? W : ((t-t0)/(t1-t0))*(W-8)+4;
+  const Y = v => H-8-((v-mn)/(mx-mn))*(H-18);
+  ctx.strokeStyle = '#1f2630'; ctx.fillStyle = '#687786'; ctx.font = '9px Menlo'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const y = 8+i*(H-20)/4; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.fillText(Math.round(mx-(mx-mn)*i/4), 4, y+3); }
+  if (oom != null) { ctx.strokeStyle = '#f5c451'; ctx.setLineDash([5,4]); ctx.beginPath(); ctx.moveTo(0,Y(oom)); ctx.lineTo(W,Y(oom)); ctx.stroke(); ctx.setLineDash([]); }
+  for (const d of defs) {
+    if (d.data.length < 2) continue;
+    ctx.beginPath(); d.data.forEach((p,i) => { const x = X(p.t), y = Y(p.v); i ? ctx.lineTo(x,y) : ctx.moveTo(x,y); });
+    ctx.strokeStyle = d.color; ctx.lineWidth = 1.8; ctx.stroke();
+    const last = d.data[d.data.length-1];
+    ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(X(last.t), Y(last.v), 2.6, 0, 7); ctx.fill();
+    ctx.fillText(d.name, W-60, 10+defs.indexOf(d)*12);
+  }
+}
+
+function growthRateMbPerMin(pts) {
+  const now = Date.now(); const win = (pts ?? []).filter(p => now - p.t <= 240000);
+  if (win.length < 4) return 0;
+  const dtMin = (win[win.length-1].t - win[0].t) / 60000;
+  return dtMin > 0 ? Math.max(0, Math.round((win[win.length-1].v - win[0].v) / dtMin)) : 0;
+}
+
+async function con(cmd) {
+  try { const r = await (await fetch(API + '/api/cmd', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({cmd}) })).json();
+    if (r.output) console.log(r.output); } catch {}
+}
+function simStart() { con(`simulate ${$('simN').value} ${$('simI').value} ${$('simB').value}`); }
+
+async function refresh() {
+  let s; try { s = await (await fetch(API + '/api/snapshot')).json(); } catch { $('footer').textContent = '✖ NOC server on :8095 unreachable — run: npm run dashboard'; return; }
+  const tg = Object.fromEntries(s.targets.map(t => [t.id, t]));
+  const ok = t => t && t.lastOk && Date.now() - t.lastOk < 8000;
+  const p = tg.prod, tw = tg.twin;
+  const mem = p?.metrics?.app_mem_mb ?? 0, leak = !!p?.state?.leakOn;
+  const rate = growthRateMbPerMin(s.series['prod:app_mem_mb']);
+  const ver = p?.metrics?._version ?? '—';
+
+  const rp = $('relPill'); rp.textContent = 'release: ' + ver;
+  rp.className = 'pill ' + (leak ? 'bad' : 'ok');
+  const lp = $('leakPill');
+  if (leak) { lp.textContent = `LEAK ACTIVE — climbing ~${rate} MB/min (observed)`; lp.className = 'pill bad'; }
+  else { lp.textContent = 'no leak — memory stable'; lp.className = 'pill ok'; }
+
+  $('kMem').textContent = Math.round(mem) + ' MB';
+  $('kMem').style.color = mem > 400 ? 'var(--red)' : mem > 250 ? 'var(--yellow)' : 'var(--green)';
+  $('kRate').textContent = leak ? '~' + rate + ' MB/min' : '~0';
+  $('kRate').className = 'v ' + (leak && rate > 2 ? 'grow' : 'flat');
+  const rss = (s.dockerMem ?? {})['prod-app'];
+  $('kRss').textContent = rss != null ? rss + ' MB' : '—';
+  $('kRss').style.color = rss != null && rss > 400 ? 'var(--red)' : 'var(--green)';
+  const tm = tw?.metrics?.app_mem_mb;
+  $('kTwin').textContent = tm != null ? Math.round(tm) + ' MB' : '—';
+  $('kTwin').style.color = 'var(--green)';
+
+  draw('cMem', [
+    { name: 'prod', color: '#f05252', data: s.series['prod:app_mem_mb'] ?? [] },
+    { name: 'twin', color: '#3ddc84', data: s.series['twin:app_mem_mb'] ?? [] },
+  ], 512);
+
+  $('footer').textContent = `updated ${fmtT(Date.now())} · live telemetry from the running system · release ${ver}`;
+}
+refresh(); setInterval(refresh, 2000);
+</script>
+</body>
+</html>

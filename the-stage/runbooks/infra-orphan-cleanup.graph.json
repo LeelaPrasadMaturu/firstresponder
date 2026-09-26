@@ -1,0 +1,87 @@
+{
+  "runbook": "../the-stage/runbooks/infra-orphan-cleanup.md",
+  "title": "Orphaned event-pool cleanup — forgotten min-instances (cost hygiene)",
+  "revision": "252f98d",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Inventory the pools and price the waste",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Inventory the pools and price the waste\nName the orphan precisely: node count, $/hr, $/day, and what it was for.\n(code block — see commands)",
+      "commands": [
+        "STATE=$(curl -s $APP_URL/admin/state)\necho \"$STATE\" | python3 -c \"\nimport json,sys\nd=json.load(sys.stdin)\npool=[p for p in d['pools'] if p['name']=='event-pool'][0]\nprint(f\\\"event-pool: {pool['size']} nodes @ \\${pool['rate_usd_hr']}/hr = \\${round(pool['size']*pool['rate_usd_hr']*24,2)}/day of pure waste if idle\\\")\""
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/admin/state",
+          "expectContains": "event-pool"
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 19
+    },
+    {
+      "id": "step-2",
+      "title": "Prove the capacity is truly idle",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Prove the capacity is truly idle\nA pool may only be deleted if current traffic needs none of it. Branch on the\nlive capacity math — state the branch and the evidence:\n(code block — see commands)",
+      "commands": [
+        "RPS=$(curl -s $APP_URL/slo | python3 -c \"import json,sys; print(json.load(sys.stdin)['traffic_rps'])\")\nBASE_CAP=$(curl -s $APP_URL/admin/state | python3 -c \"import json,sys; d=json.load(sys.stdin); print([p for p in d['pools'] if p['name']=='core-pool'][0]['size'] * 500 + d['replicas'] * 100)\")\nif [ \"$RPS\" -lt \"$BASE_CAP\" ]; then\n  echo \"BRANCH=orphan-confirmed — traffic ${RPS}rps fits in base capacity ${BASE_CAP}rps: event-pool is idle, safe to decommission\"\nelse\n  echo \"BRANCH=in-use — traffic ${RPS}rps exceeds base capacity ${BASE_CAP}rps: event-pool is load-bearing, do NOT delete\"\nfi"
+      ],
+      "probes": [],
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 33
+    },
+    {
+      "id": "step-3",
+      "title": "Decommission the orphaned nodes (gated)",
+      "type": "ACT_IRREVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Decommission the orphaned nodes (gated)\nHUMAN GATE. Decommissioning terminates the nodes. The undo below was executed\nagainst the staging twin during rehearsal (recreate at the same size), which\nis why this step is allowed to run at all — no undo, no action:\n(code block — see commands)\nUndo (tested in rehearsal — recreates the pool at its prior size):\n(code block — see commands)",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{\"name\":\"event-pool\",\"size\":0}'",
+        "curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{\"name\":\"event-pool\",\"size\":6}'"
+      ],
+      "probes": [],
+      "blastRadius": "event-pool nodes terminated; ~$X/day spend reclaimed; capacity headroom reduced by nodes×500rps",
+      "requires": [
+        "step-2"
+      ],
+      "gate": true,
+      "sourceLine": 48
+    },
+    {
+      "id": "step-4",
+      "title": "Verify the reclaim",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Verify the reclaim\nIndependent verification: core capacity untouched, SLO still green, cost\nmodel updated. Report the reclaimed $/day from the live state — the next\nweekly cost review starts with this number already better.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "slo_ok"
+        },
+        {
+          "kind": "http",
+          "target": "/admin/state",
+          "expectContains": "core-pool"
+        }
+      ],
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 63
+    }
+  ],
+  "compiledAt": "2026-09-26T11:14:21.193Z"
+}

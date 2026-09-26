@@ -1,0 +1,140 @@
+{
+  "runbook": "../the-stage/runbooks/infra-scale-down.md",
+  "title": "Post-event scale-down — order-service (cost reclamation)",
+  "revision": "284d849",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Baseline: replicas, traffic, and daily spend",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Baseline: replicas, traffic, and daily spend\nRecord the \"before\" cost — the flywheel will compare against the \"after\"\nso the addendum records the actual dollars reclaimed, not an estimate.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/admin/state",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 18
+    },
+    {
+      "id": "step-2",
+      "title": "Verify the safe-to-descale precondition",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Verify the safe-to-descale precondition\nResidual traffic must be ≤ 30% of replica capacity. If the event is still\nlive (or traffic shifted later than forecast), this probe FAILS the run\nhere — the correct outcome is \"stay scaled up,\" not \"hope.\"",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "descale_safe"
+        }
+      ],
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 24
+    },
+    {
+      "id": "step-3",
+      "title": "Descale order-service replicas 40 → 15",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Descale order-service replicas 40 → 15\n(code block — see commands)\nUndo: `curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":40}'`",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{\"replicas\":15}'"
+      ],
+      "probes": [],
+      "blastRadius": "none — reversible; precondition verified in step 2; undo = scale back to 40",
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 31
+    },
+    {
+      "id": "step-4",
+      "title": "Scale the event node pool 4 → 0",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Scale the event node pool 4 → 0\n(code block — see commands)\nUndo: `curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{\"name\":\"event-pool\",\"size\":4}'`",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{\"name\":\"event-pool\",\"size\":0}'"
+      ],
+      "probes": [],
+      "blastRadius": "none — reversible; the actual cost reclamation (-$28.80/day); undo = provision 4 nodes",
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 40
+    },
+    {
+      "id": "step-5",
+      "title": "Verify SLO held after descale",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Verify SLO held after descale\np99 must be unchanged from baseline. A latency regression after descale\nmeans we cut too deep — the undo exists and the runbook says to use it.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "slo_ok"
+        }
+      ],
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 49
+    },
+    {
+      "id": "step-6",
+      "title": "Verify headroom is retained for normal traffic",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Verify headroom is retained for normal traffic\nDescaled capacity must still carry ≤80% utilization at normal load.\nOver-descaled \"savings\" that break the next small spike are not savings.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "headroom_ok"
+        }
+      ],
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 55
+    },
+    {
+      "id": "step-7",
+      "title": "Record the reclaimed cost",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — Record the reclaimed cost\nCompare daily spend vs the Step 1 baseline. The flywheel appends the\nactual delta to the runbook — the cost runbook that measures itself.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/metrics",
+          "expectContains": "cost_usd_daily"
+        }
+      ],
+      "requires": [
+        "step-6"
+      ],
+      "gate": false,
+      "sourceLine": 61
+    }
+  ],
+  "compiledAt": "2026-09-26T07:04:19.780Z"
+}

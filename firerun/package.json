@@ -1,0 +1,39 @@
+{
+  "name": "firerun",
+  "version": "0.1.0",
+  "description": "FIRSTRESPONDER — the runbook runtime. Deterministic core, agentic reasoning.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "cli": "tsx src/cli.ts",
+    "compile": "tsx src/cli.ts compile",
+    "rehearse": "tsx src/cli.ts rehearse",
+    "execute": "tsx src/cli.ts execute",
+    "serve": "tsx src/cli.ts serve",
+    "demo:verify": "tsx src/verify-suite.ts",
+    "dashboard": "node dashboard.mjs",
+    "tf:setup": "tsx src/trueforge/setup.ts",
+    "tf:server": "trueforge",
+    "tf:mcp": "tsx src/trueforge/tools-mcp.ts",
+    "tf:smoke": "tsx src/trueforge/smoke-test.ts",
+    "gate:watch": "tsx src/approve-gate.ts watch",
+    "gate:approve": "tsx src/approve-gate.ts approve",
+    "gate:reject": "tsx src/approve-gate.ts reject"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "@truefoundry/trueforge-sdk": "^0.2.0",
+    "express": "^4.19.2",
+    "pg": "^8.12.0",
+    "tsx": "^4.19.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.5.0",
+    "@types/pg": "^8.11.6",
+    "typescript": "^5.5.4"
+  }
+}

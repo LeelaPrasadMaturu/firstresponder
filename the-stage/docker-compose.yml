@@ -1,0 +1,83 @@
+name: firstresponder-stage
+
+# Ports are overridable — copy .env.example or set env vars if 8080/5433 are taken.
+# Defaults match firerun/.env.example exactly.
+
+services:
+  # ── LOCAL REGISTRY (registry-backed deploys — real push/pull semantics) ──
+  registry:
+    image: registry:2
+    container_name: local-registry
+    ports: ["${REGISTRY_PORT:-5555}:5000"]
+
+  # ── FAKE PROD (the "real system" — deliberately realistic) ────────────────
+  # NOTE: the running release comes FROM THE IMAGE (registry-backed deploys).
+  # To set the initial incident choreography: curl -XPOST :8080/admin/deploy -d '{"version":"v2.1.0"}'
+  app:
+    image: ${PROD_IMAGE:-fake-prod:local}
+    build: ./fake-prod
+    container_name: prod-app
+    ports: ["${PROD_APP_PORT:-8080}:8080"]
+    environment:
+      PORT: "8080"
+
+  db:
+    image: postgres:16-alpine
+    container_name: prod-db
+    environment:
+      POSTGRES_USER: stage
+      POSTGRES_PASSWORD: stage
+      POSTGRES_DB: stagedb
+    ports: ["${PROD_DB_PORT:-5433}:5432"]
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stage -d stagedb"]
+      interval: 2s
+      retries: 15
+
+  # ── STAGING TWIN (Shadow Mode target — disposable) ────────────────────────
+  twin-app:
+    image: ${TWIN_IMAGE:-fake-prod:local}
+    build: ./fake-prod
+    container_name: twin-app
+    ports: ["${TWIN_APP_PORT:-8081}:8080"]
+    environment:
+      PORT: "8080"
+
+  # ── CLUSTER-B (infra-move runbook — the migration target) ────────────────
+  # Starts as a standby cluster: no replicas, no traffic, not yet provisioned.
+  cluster-b:
+    image: ${PROD_IMAGE:-fake-prod:local}
+    build: ./fake-prod
+    container_name: cluster-b-app
+    ports: ["${CLUSTER_B_PORT:-18082}:8080"]
+    environment:
+      PORT: "8080"
+      CLUSTER_ROLE: "standby"
+      REPLICAS: "0"
+      TRAFFIC_RPS: "0"
+
+  twin-db:
+    image: postgres:16-alpine
+    container_name: twin-db
+    environment:
+      POSTGRES_USER: stage
+      POSTGRES_PASSWORD: stage
+      POSTGRES_DB: stagedb
+    ports: ["${TWIN_DB_PORT:-5434}:5432"]
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stage -d stagedb"]
+      interval: 2s
+      retries: 15
+
+  # ── PAGER MOCK (the 🔥 button) ─────────────────────────────────────────────
+  pager:
+    build: ./pagerduty-mock
+    container_name: pagerduty-mock
+    ports: ["${PAGER_PORT:-8090}:8090"]
+    environment:
+      GATE_URL: ${GATE_URL:-http://host.docker.internal:7788}   # fires webhook into firerun
+      PORT: "8090"

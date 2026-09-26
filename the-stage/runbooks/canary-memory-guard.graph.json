@@ -1,0 +1,165 @@
+{
+  "runbook": "../the-stage/runbooks/canary-memory-guard.md",
+  "title": "Progressive delivery — canary deploy with memory-leak guard (signer-prod)",
+  "revision": "252f98d",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Capture the pre-deploy baseline",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 1 — Capture the pre-deploy baseline\nRecord the current release, memory level, traffic and capacity BEFORE touching\nanything. Every later decision is relative to this baseline.\n(code block — see commands)",
+      "commands": [
+        "curl -s $APP_URL/admin/state"
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectStatus": 200
+        }
+      ],
+      "requires": [],
+      "gate": false,
+      "sourceLine": 17
+    },
+    {
+      "id": "step-2",
+      "title": "Ship the canary release",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 2 — Ship the canary release\nDeploy the new release under test. Reversible by design: re-deploying the\nbaseline release restores the exact pre-canary state.\n(code block — see commands)",
+      "commands": [
+        "curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v2.1.0\"}'"
+      ],
+      "probes": [],
+      "blastRadius": "canary serves 100% during soak; previous release one command away",
+      "requires": [
+        "step-1"
+      ],
+      "gate": false,
+      "sourceLine": 27
+    },
+    {
+      "id": "step-3",
+      "title": "Canary smoke check",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 3 — Canary smoke check\nThe canary must serve real traffic correctly: every public page renders its\nfull content (pixels, not exit codes) and health is green.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectStatus": 200
+        },
+        {
+          "kind": "content",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/pricing",
+          "expectContains": "Plans"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-2"
+      ],
+      "gate": false,
+      "sourceLine": 36
+    },
+    {
+      "id": "step-4",
+      "title": "Soak analysis: branch on memory growth",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 4 — Soak analysis: branch on memory growth\nWatch memory across the soak window. The leak in a bad release grows on every\nmetrics scrape (+8MB each); a healthy release stays flat at the baseline.\nTake the branch that matches the evidence and SAY which branch you took:\n(code block — see commands)",
+      "commands": [
+        "MEM=$(curl -s $APP_URL/healthz | python3 -c \"import json,sys; print(json.load(sys.stdin)['mem_mb'])\")\nBASE=60\nif [ \"${MEM:-0}\" -gt 400 ]; then\n  echo \"BRANCH=leak-detected — memory ${MEM}MB vs baseline ${BASE}MB: trigger auto-rollback in the next step\"\nelse\n  echo \"BRANCH=healthy — memory ${MEM}MB within tolerance: promote, no rollback needed\"\nfi"
+      ],
+      "probes": [],
+      "requires": [
+        "step-3"
+      ],
+      "gate": false,
+      "sourceLine": 45
+    },
+    {
+      "id": "step-5",
+      "title": "Conditional remediation: auto-rollback (or clean promote)",
+      "type": "ACT_REVERSIBLE",
+      "classifiedBy": "marker",
+      "intent": "Step 5 — Conditional remediation: auto-rollback (or clean promote)\nAct on the branch from the soak analysis. If the leak was detected, roll back\nto the last known-good release immediately. If the canary was healthy, this\nstep is intentionally a no-op:\n(code block — see commands)\nUndo (only meaningful if a rollback was performed):\n`curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v2.1.0\"}'`",
+      "commands": [
+        "MEM=$(curl -s $APP_URL/healthz | python3 -c \"import json,sys; print(json.load(sys.stdin)['mem_mb'])\")\nif [ \"${MEM:-0}\" -gt 400 ]; then\n  curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{\"version\":\"v1.42.0\"}'\n  echo \"BRANCH=rolled-back — leaky canary contained, v1.42.0 restored\"\nelse\n  echo \"BRANCH=promoted — canary healthy, no action taken\"\nfi"
+      ],
+      "probes": [],
+      "blastRadius": "one release flip; ~10s of request churn; sessions preserved",
+      "requires": [
+        "step-4"
+      ],
+      "gate": false,
+      "sourceLine": 61
+    },
+    {
+      "id": "step-6",
+      "title": "Verify post-decision health",
+      "type": "VERIFY",
+      "classifiedBy": "marker",
+      "intent": "Step 6 — Verify post-decision health\nWhichever branch was taken, production must end healthy: health marker\n`mem_ok`, all pages rendering.",
+      "commands": [],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/healthz",
+          "expectContains": "mem_ok"
+        },
+        {
+          "kind": "content",
+          "target": "/",
+          "expectContains": "ACME"
+        },
+        {
+          "kind": "content",
+          "target": "/status",
+          "expectContains": "operational"
+        }
+      ],
+      "requires": [
+        "step-5"
+      ],
+      "gate": false,
+      "sourceLine": 80
+    },
+    {
+      "id": "step-7",
+      "title": "Post-decision evidence record",
+      "type": "READ",
+      "classifiedBy": "marker",
+      "intent": "Step 7 — Post-decision evidence record\nFinal state for the incident record: which release is live, final memory, SLO\nposture, and the decision the guard made. SCRIBE folds this into the runbook\naddendum so the next release starts smarter.\n(code block — see commands)",
+      "commands": [
+        "curl -s $APP_URL/admin/state && curl -s $APP_URL/slo"
+      ],
+      "probes": [
+        {
+          "kind": "http",
+          "target": "/slo",
+          "expectContains": "slo_"
+        }
+      ],
+      "requires": [
+        "step-6"
+      ],
+      "gate": false,
+      "sourceLine": 88
+    }
+  ],
+  "compiledAt": "2026-09-26T11:05:41.431Z"
+}
