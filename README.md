@@ -20,35 +20,53 @@ A markdown runbook is compiled into a typed **Execution Graph**. Every step is c
 
 ---
 
+## Prerequisites
+
+| Requirement | Version | Check | Notes |
+|---|---|---|---|
+| **Node.js** | **22 or newer** | `node -v` | [nodejs.org](https://nodejs.org) — v20 or older will fail (`engines` is enforced) |
+| **Docker** + Compose v2 | recent stable | `docker compose version` | [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS/Windows) or `docker.io` + `docker-compose-plugin` (Linux). Must be **running** before step 1 |
+| **Git** | any recent | `git --version` | used by the flywheel (local commits only — no GitHub account needed) |
+| **Model API key** | — | — | any OpenAI-compatible provider (OpenAI, Portkey, TrueFoundry AI Gateway, LiteLLM). **No key?** Use the offline **Ollama** preset — fully local, zero cost |
+
+> **Platform:** works on **macOS**, **Linux**, and **Windows via WSL2** (run everything inside WSL, not PowerShell). No cloud accounts, no paid infra — everything except the model API runs locally in Docker.
+
 ## Quickstart
 
-Prereqs: **Node 22+**, **Docker**, an **OpenAI-compatible API key** (OpenAI, or anything OpenAI-compatible — including TrueFoundry's AI Gateway, Ollama, LiteLLM).
-
 ```bash
+# 0. Clone + enter the repo
+git clone https://github.com/LeelaPrasadMaturu/firstresponder.git
+cd firstresponder
+
 # 1. The Stage — the fake production system, twin, and pager
 cd the-stage
-docker compose up -d          # ~60s first time
+docker compose up -d          # ~60s first time; `docker compose ps` should show 5+ containers Up
 
 # 2. The engine
 cd ../firerun
-cp .env.example .env          # pick 1 of 3 provider presets (see below) + add keys
-npm install
+cp .env.example .env          # then EDIT .env: pick 1 of 3 provider presets (see table below) + add your key
+npm install                   # ~30s
 
-# 3. Compile a runbook (deterministic — no LLM)
+# 3. Sanity-check the whole demo headlessly (must print 🎯 Stage is demo-ready)
+npm run demo:verify
+
+# 4. Compile a runbook (deterministic — no LLM)
 npm run cli -- compile ../the-stage/runbooks/incident-memory-leak.md
 
-# 4. Rehearse it against the staging twin (nothing touches prod)
+# 5. Rehearse it against the staging twin (nothing touches prod)
 npm run cli -- rehearse ../the-stage/runbooks/incident-memory-leak.md
 
-# 5. Execute it live (gates open in your browser + Slack webhook)
+# 6. Execute it live (gates open in your browser + Slack webhook)
 npm run cli -- execute ../the-stage/runbooks/incident-memory-leak.md
 
-# 6. Or: go full on-call — fire the incident, the agent runs the whole flow
-open http://localhost:8090    # press 🔥 FIRE INCIDENT
+# 7. Or: go full on-call — fire the incident, the agent runs the whole flow
+open http://localhost:8090    # press 🔥 FIRE INCIDENT  (Linux: xdg-open, WSL: explorer.exe)
 npm run cli -- serve ../the-stage/runbooks/incident-memory-leak.md
 #                              ↑ armed: any alert (mock, Opsgenie, PagerDuty)
 #                                auto-runs rehearse→execute→gate→addendum
 ```
+
+> **First run slow?** The very first LLM call can take 10–30s (cold connection). That's normal — run step 4 once to warm up before demoing.
 
 ### Model providers — three presets (in `.env.example`)
 
@@ -67,6 +85,18 @@ npm run cli -- serve ../the-stage/runbooks/incident-memory-leak.md
 5. The **refusal**: trigger a step with no constructible undo — the agent refuses. On camera. That's the demo.
 6. ✅ **Verifier** check *actual rendered pages* (not exit codes) via headless-browser probes
 7. 📚 The **flywheel**: a git commit adding an addendum to the runbook you just lived through
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `docker compose up` fails or `docker compose ps` is empty | Docker daemon isn't running — start Docker Desktop / the `docker` service first |
+| `npm run cli` fails immediately with an engine error | Node < 22 — upgrade and re-check (`nvm install 22 && nvm use 22` if you use nvm) |
+| Model 401 / 403 on first call | `.env` has no valid key, or wrong preset uncommented — exactly one provider block should be active |
+| `EADDRINUSE` on :8080/:8081/:8090/:8095 | port already owned — `docker compose down` in `the-stage/`, or stop the old dashboard (`lsof -ti :8095 \| xargs kill`) |
+| Stage wedged / weird state after experiments | full reset: `docker compose -f the-stage/docker-compose.yml down -v && docker compose -f the-stage/docker-compose.yml up -d`, then `npm run demo:verify` |
+| Gate UI never opens | gate server not up — open `http://localhost:17788` while `serve`/`execute` runs, or fall back to CLI approvals with `FIRERUN_GATE=cli` |
+| Want to run with **no API key at all** | Ollama preset: install [ollama.com](https://ollama.com), `ollama pull llama3.1`, uncomment Preset 3 (Ollama) in `.env` |
 
 ---
 
