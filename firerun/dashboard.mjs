@@ -236,10 +236,35 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     }
-    if (url.pathname === '/alerts' || url.pathname === '/agents' || url.pathname === '/') {
+    if (url.pathname === '/alerts' || url.pathname === '/') {
       try {
         return send(200, fs.readFileSync(path.resolve(__dirname, '../dashboard/alert-dashboard.html')), 'text/html; charset=utf-8');
       } catch { return send(404, 'alert-dashboard.html not found next to the repo root'); }
+    }
+    if (url.pathname === '/agents') {
+      try {
+        return send(200, fs.readFileSync(path.resolve(__dirname, '../dashboard/agents.html')), 'text/html; charset=utf-8');
+      } catch { return send(404, 'agents.html not found'); }
+    }
+    if (url.pathname === '/api/tf/status') {
+      try {
+        const [agentsRes, sbRes] = await Promise.all([
+          fetch('http://localhost:8790/api/v1/agents', { signal: AbortSignal.timeout(2500) }).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch('http://localhost:8790/api/v1/settings/sandbox-providers', { signal: AbortSignal.timeout(2500) }).then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        return send(200, JSON.stringify({
+          ok: !!agentsRes,
+          agents: agentsRes?.data ?? [],
+          sandbox: sbRes?.data ?? null,
+        }));
+      } catch (e) { return send(200, JSON.stringify({ ok: false, agents: [], sandbox: null, error: String(e.message ?? e) })); }
+    }
+    if (url.pathname === '/api/tf/mcp') {
+      try {
+        const r = await fetch('http://localhost:7789/healthz', { signal: AbortSignal.timeout(2000) });
+        const j = r.ok ? await r.json() : {};
+        return send(200, JSON.stringify({ ok: r.ok, tools: j.tools ?? 6 }));
+      } catch { return send(200, JSON.stringify({ ok: false, tools: 0 })); }
     }
     if (url.pathname === '/lab') {
       try {
@@ -266,6 +291,8 @@ const server = http.createServer(async (req, res) => {
           const ver = (v) => { if (!/^v\d+\.\d+\.\d+$/.test(v)) throw new Error('expected version like v2.1.0'); return v; };
 
         const RB = /^(\.\.\/)?the-stage\/runbooks\/[\w.-]+\.md$/;
+        const prod = 'http://localhost:18080';
+        const post = (ep, payload) => execFile('curl', ['-s', '-XPOST', ep, '-H', 'content-type: application/json', '-d', JSON.stringify(payload)], { timeout: 8000 }, (e, so, se) => out(String(so || se || e)));
         try {
           // release-rollout composite: twin-first fix rollout with the human gate
           if (head === 'rollout') {
@@ -304,8 +331,20 @@ const server = http.createServer(async (req, res) => {
             return post(`${'http://localhost:18080'}/admin/pools`, { name, size: Number(size) });
           }
           // composite demo flows: rehearse → execute chained, one click
-          if (head === 'canary' || head === 'incident') {
-            const rb = head === 'canary' ? 'canary-memory-guard.md' : 'incident-memory-leak.md';
+          if (head === 'canary' || head === 'incident' || head === 'latency' || head === 'orphan') {
+            const rbMap = {
+              canary: 'canary-memory-guard.md',
+              incident: 'incident-memory-leak.md',
+              latency: 'latency-spike.md',
+              orphan: 'infra-orphan-cleanup.md',
+            };
+            const noteMap = {
+              canary: 'fully autonomous, zero gates',
+              incident: 'phone gate will open at the irreversible step',
+              latency: 'capacity triage — fully autonomous',
+              orphan: 'human gate at decommission step',
+            };
+            const rb = rbMap[head];
             const log = `/tmp/firerun-console-${Date.now()}.log`;
             const script = `npx tsx src/cli.ts rehearse ../the-stage/runbooks/${rb} && npx tsx src/cli.ts execute ../the-stage/runbooks/${rb}`;
             const child = spawn('bash', ['-lc', script], {
@@ -314,7 +353,7 @@ const server = http.createServer(async (req, res) => {
             });
             child.unref();
             consoleLog = log;
-            return out(`▶ ${head.toUpperCase()} FLOW started: rehearse → execute ${rb} (pid ${child.pid})${head === 'incident' ? ' — phone gate will open at the irreversible step' : ' — fully autonomous, zero gates'}`);
+            return out(`▶ ${head.toUpperCase()} FLOW started: rehearse → execute ${rb} (pid ${child.pid}) — ${noteMap[head]}`);
           }
           // long-running runbook commands → background + streamed log
           if (['oncall', 'execute', 'rehearse', 'compile', 'serve'].includes(head)) {
@@ -329,17 +368,17 @@ const server = http.createServer(async (req, res) => {
             consoleLog = log;
             return out(`▶ started '${head} ${rb}' (pid ${child.pid}) — streaming to console…`);
           }
-          const prod = 'http://localhost:18080';
-          const post = (ep, payload) => execFile('curl', ['-s', '-XPOST', ep, '-H', 'content-type: application/json', '-d', JSON.stringify(payload)], { timeout: 8000 }, (e, so, se) => out(String(so || se || e)));
           switch (head) {
             case 'help': return out(
 `FIRERUN console — commands:
-  canary                   🛡 rehearse+execute the canary guard (autonomous, no gates)
-  rollout                  🚦 twin-first fix rollout: verify on twin → Daytona soak → YOUR gate → prod
-  simulate <n> <sec> <bursts>  🧪 leak lab: N requests every S sec × B bursts (+8MB/scrape while leaky)
+  canary                   rehearse+execute the canary guard (autonomous, no gates)
+  rollout                  twin-first fix rollout: verify on twin → Daytona soak → YOUR gate → prod
+  simulate <n> <sec> <bursts>  leak lab: N requests every S sec × B bursts (real /metrics hits)
   simstop                  stop the simulator
   pool <name> <size>       arm/clear node pools (e.g. pool event-pool 6 — the forgotten min-instances)
-  incident                 🚨 rehearse+execute the incident runbook (phone gate at step-7)
+  incident                 rehearse+execute the incident runbook (phone gate at step-5)
+  latency                  rehearse+execute latency-spike (capacity triage, autonomous)
+  orphan                   rehearse+execute infra-orphan-cleanup (gate at decommission)
   oncall|execute|rehearse|compile <../the-stage/runbooks/<name>.md>   run the runtime (streams here)
   deploy <vX.Y.Z>          put prod on a release (v2.1.0 = leaky)
   rollback                 deploy v1.42.0 (last known-good)
@@ -396,7 +435,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\firescreen FIRERUN NOC console → http://localhost:${PORT}  (scraping every ${SCRAPE_MS}ms)`);
-  console.log(`firescreen Alert Command Center → http://localhost:${PORT}/alerts`);
+  console.log(`firescreen Alert Command Center → http://localhost:${PORT}/`);
+  console.log(`firescreen Leak Lab → http://localhost:${PORT}/lab`);
+  console.log(`firescreen Agent Roster → http://localhost:${PORT}/agents`);
   for (const t of TARGETS) console.log(`   · scraping ${t.role.padEnd(7)} ${t.url}/metrics`);
 });
 

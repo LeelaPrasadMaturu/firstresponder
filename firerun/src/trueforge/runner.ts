@@ -196,7 +196,8 @@ export async function verifyWithProbes(state: RunState, step: Step, result: Step
   if (!step.probes.length) return true;
   const twinTargets = { appUrl: config.twinAppUrl, dbUrl: config.twinDbUrl };
   const prodTargets = { appUrl: config.prodAppUrl, dbUrl: config.prodDbUrl };
-  const results = await runProbes(step.probes, prodTargets, twinTargets);
+  const primary = state.target === 'twin' ? twinTargets : prodTargets;
+  const results = await runProbes(step.probes, primary, twinTargets);
   result.probeResults = results;
   console.log(renderProbeResults(results));
   return results.every(r => r.ok);

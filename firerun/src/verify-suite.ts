@@ -45,9 +45,13 @@ async function main(): Promise<void> {
   const books = [
     '../the-stage/runbooks/incident-memory-leak.md',
     '../the-stage/runbooks/canary-memory-guard.md',
+    '../the-stage/runbooks/release-rollout.md',
     '../the-stage/runbooks/latency-spike.md',
     '../the-stage/runbooks/infra-orphan-cleanup.md',
     '../the-stage/runbooks/deploy-app.md',
+    '../the-stage/runbooks/deploy-registry.md',
+    '../the-stage/runbooks/migrate-orders.md',
+    '../the-stage/runbooks/infra-move.md',
     '../the-stage/runbooks/cleanup-raw-events-refusal-demo.md',
     '../the-stage/runbooks/infra-monitor.md',
     '../the-stage/runbooks/infra-scale-up.md',

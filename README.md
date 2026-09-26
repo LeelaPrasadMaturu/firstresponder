@@ -91,8 +91,12 @@ npm run cli -- serve ../the-stage/runbooks/incident-memory-leak.md
 firstresponder/                 (this repo)
 ├── README.md              ← you are here
 ├── LICENSE                ← MIT
-├── dashboard/             ← Alert Command Center + Leak Lab (served by the engine)
-├── firerun/               ← THE ENGINE (TypeScript runtime + NOC/Alert dashboards)
+├── docs/                  ← demo-day ops companion (DEMO, cheatsheet, safety model)
+├── dashboard/             ← Alert Command Center + Leak Lab + Agent Roster
+│   ├── alert-dashboard.html
+│   ├── alert-lab.html
+│   └── agents.html        ← TrueForge agent roster + runbook library
+├── firerun/               ← THE ENGINE (TypeScript runtime + NOC server)
 │   └── src/
 │       ├── cli.ts           compile | rehearse | execute | oncall | serve
 │       ├── compiler.ts      markdown → Execution Graph (deterministic)
@@ -109,13 +113,22 @@ firstresponder/                 (this repo)
     ├── fake-prod/           multi-page app, seeded DB, memory-leak, flaky page
     ├── twin/                disposable clone for Shadow Mode
     ├── pagerduty-mock/      🔥 FIRE INCIDENT button → webhook
-    └── runbooks/            11 runbooks — release-rollout (twin-first + Daytona soak
+    └── runbooks/            14 runbooks — release-rollout (twin-first + Daytona soak
                               + approval gate), incident (gated), canary-memory-guard
                               (autonomous leak guard), latency-spike (capacity
                               triage), infra-orphan-cleanup (cost hygiene, gated),
-                              deploy×2, infra pair, migration, refusal demo,
-                              monitor, move, delete
+                              deploy-app + deploy-registry (OCI image semantics),
+                              migrate-orders (schema rehearsal-first), infra-move,
+                              infra scale/monitor/delete pair, refusal demo
 ```
+
+### Demo-day docs (`docs/`)
+
+| File | Purpose |
+|---|---|
+| `docs/DEMO.md` | Word-for-word recording choreography |
+| `docs/RUN-CHEATSHEET.md` | Every terminal command, in order |
+| `docs/SAFETY.md` | Where it stops — runtime-enforced invariants |
 
 ## TrueForge integration
 
@@ -148,7 +161,8 @@ A Grafana/Prometheus-style console that scrapes **real** telemetry — nothing m
 cd firerun
 npm run dashboard          # → http://localhost:8095   (plain node, zero deps)
 # /        → Alert Command Center (home): live alerts, charts, run console
-# /lab     → 🧪 Leak Lab: load simulator + scenario triggers (separate tab)
+# /lab     → Leak Lab: load simulator + scenario triggers (separate tab)
+# /agents  → TrueForge agent roster, runbook library, TF health
 # /noc     → legacy big-screen memory view (optional)
 ```
 

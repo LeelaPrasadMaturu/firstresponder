@@ -55,10 +55,7 @@ is why this step is allowed to run at all — no undo, no action:
 curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{"name":"event-pool","size":0}'
 ```
 
-Undo (tested in rehearsal — recreates the pool at its prior size):
-```bash
-curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{"name":"event-pool","size":6}'
-```
+Undo: `curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{"name":"event-pool","size":6}'`
 
 ## Step 4 — Verify the reclaim
 <!-- firerun: type=VERIFY -->

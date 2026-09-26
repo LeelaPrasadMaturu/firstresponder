@@ -32,8 +32,10 @@ Ship the fix release to the twin. Production is NOT touched in this step —
 that is the whole point of the twin.
 
 ```bash
-curl -s -XPOST $APP_URL/admin/deploy -H 'content-type: application/json' -d '{"version":"v1.42.0"}'
+curl -s -XPOST $TWIN_URL/admin/deploy -H 'content-type: application/json' -d '{"version":"v1.42.0"}'
 ```
+
+Undo: `curl -s -XPOST $TWIN_URL/admin/deploy -H 'content-type: application/json' -d '{"version":"v2.1.0"}'`
 
 ## Step 3 — Verify the fix on the twin
 <!-- firerun: type=VERIFY -->
@@ -52,7 +54,7 @@ sandboxed code execution (Daytona) for the regression math — sample, fit, and
 decide with evidence. Branch explicitly:
 
 ```bash
-for i in 1 2 3 4 5; do curl -s $APP_URL/healthz | python3 -c "import json,sys; print(json.load(sys.stdin)['mem_mb'])"; sleep 2; done
+for i in 1 2 3 4 5; do curl -s $TWIN_URL/healthz | python3 -c "import json,sys; print(json.load(sys.stdin)['mem_mb'])"; sleep 2; done
 ```
 
 If the fitted growth rate is ~0 MB/min → `BRANCH=leak-fixed — promote to

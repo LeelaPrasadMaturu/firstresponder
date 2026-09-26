@@ -56,11 +56,7 @@ curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{"re
 curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{"name":"event-pool","size":6}'
 ```
 
-Undo (restores the pre-spike fleet exactly):
-```bash
-curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{"replicas":10}'
-curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{"name":"event-pool","size":0}'
-```
+Undo: `curl -s -XPOST $APP_URL/admin/scale -H 'content-type: application/json' -d '{"replicas":10}' && curl -s -XPOST $APP_URL/admin/pools -H 'content-type: application/json' -d '{"name":"event-pool","size":0}'`
 
 ## Step 4 — Verify the SLO recovered
 <!-- firerun: type=VERIFY -->
